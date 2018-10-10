@@ -22,23 +22,35 @@ filename = 'DE0.csv'
 data = np.genfromtxt(filename, delimiter=',', missing_values='NA', filling_values=1, usecols=range(1,7))
 removeNA = data[:, -1] != 1
 data = data[removeNA, :]
-print(data.shape)
-print(data)
+#print(data.shape)
+#print(data)
 #get the data with the gene names in first column as a string
 namedata = np.genfromtxt(filename, delimiter=',', dtype=str, usecols=0)
 namedata = namedata[removeNA]
 namedata = namedata[:] 
-print(namedata.shape)
-print(namedata)
+#print(namedata.shape)
+#print(namedata)
 #convert the string gene names to integers and put them in a new dataset 
 for name in namedata:
     input = name
     input = input.lower()
     numbername = []
     for character in input:
-        number = ord(character)
+        number = ord(character) 
         numbername.append(number)
-        print(numbername)
+    dataname = []
+    dataname.append(numbername)
+print(dataname)    
+##dataname only printing one name???
+
+
+for element in dataname:
+    numbername = int("".join(map(str, element)))
+    print(numbername)
+    finalnames = []
+    finalnames.append(numbername)
+    print(finalnames)
+      
 
 #attach integer names to their numerical properties (columns1-6)
 namedata.shape=(7905, 1)
