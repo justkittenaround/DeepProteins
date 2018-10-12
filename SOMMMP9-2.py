@@ -16,21 +16,20 @@ import os
 import time
 import cv2
 from scipy.misc import bytescale
-
 #get the data without the first column as integers
-filename = 'DE0.csv'
+#filename = 'DE0.csv'
+filename='/home/mpcr/Desktop/Rachel/SparseCoding/DE0.csv'
 data = np.genfromtxt(filename, delimiter=',', missing_values='NA', filling_values=1, usecols=range(1,7))
 removeNA = data[:, -1] != 1
 data = data[removeNA, :]
-#print(data.shape)
-#print(data)
+print(data.shape)
 #get the data with the gene names in first column as a string
 namedata = np.genfromtxt(filename, delimiter=',', dtype=str, usecols=0)
 namedata = namedata[removeNA]
 namedata = namedata[:] 
-#print(namedata.shape)
-#print(namedata)
+print(namedata.shape)
 #convert the string gene names to integers and put them in a new dataset 
+dataname = []
 for name in namedata:
     input = name
     input = input.lower()
@@ -38,35 +37,40 @@ for name in namedata:
     for character in input:
         number = ord(character) 
         numbername.append(number)
-    dataname = []
     dataname.append(numbername)
-print(dataname)    
-##dataname only printing one name???
-
-
+len(dataname)#shape grew by one????? (7905 to 7906)????????????
+#make the names a single integer instead of comma seperated integers
+finalnames = []
 for element in dataname:
     numbername = int("".join(map(str, element)))
-    print(numbername)
-    finalnames = []
+    type(numbername)
     finalnames.append(numbername)
-    print(finalnames)
-      
-
+len(finalnames)   
+namesarray = np.asarray(finalnames)
+namesarray.shape = (7905, 1)
+print(namesarray.shape) # shape back to 7905?????????????
 #attach integer names to their numerical properties (columns1-6)
-namedata.shape=(7905, 1)
-namedata = np.hstack((data,namedata))
-print(namedata.shape)
+data = np.concatenate((namesarray, data), axis=1)
+print(data.shape)
+print(data[0])
 #seperate the test data 
-testnum = int(0.1 * namedata.shape[0])
-randtestind = np.random.randint(0, namedata.shape[0], testnum)
-testdata = namedata[randtestind, :]
+testnum = int(0.1 * data.shape[0])
+randtestind = np.random.choice(np.arange(0,7905), replace=False, size=testnum)
+print(randtestind)
+testdata = data[randtestind, :]
+print(testdata.shape)
 #remove the test data
-namedata = np.delete(arr=namedata, obj=randtestind, axis= 0)
+data = np.delete(arr=data, obj=randtestind, axis= 0)
+print(data.shape)
 #normalize the data
-namedata -= np.mean(namedata, 0)
-namedata /= np.std(namedata, 0)
-#?????????????
-n_in = namedata.shape[1]
+data = np.array(data, dtype=np.float64)
+data -= np.mean(data, 0)
+data /= np.std(data, 0)
+print(data.shape)
+
+
+#specify features to be the columns????
+n_in = data.shape[1]
 #make the weights
 w = np.random.randn(3, n_in) * 0.1
 #hyperparameters
@@ -74,8 +78,8 @@ lr = 0.025
 n_iters = 10000
 #do the training and show the weights on the nodes with cv2
 for i in range(n_iters):
-    randsamples = np.random.randint(0, namedata.shape[0], 1)[0] 
-    rand_in = namedata[randsamples, :] 
+    randsamples = np.random.randint(0, data.shape[0], 1)[0] 
+    rand_in = data[randsamples, :] 
     difference = w - rand_in
     dist = np.sum(np.absolute(difference), 1)
     best = np.argmin(dist)
