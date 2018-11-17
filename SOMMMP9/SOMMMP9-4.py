@@ -17,12 +17,14 @@ from scipy.misc import bytescale
 from mpl_toolkits.mplot3d import Axes3D
 import time
 import csv
+import collections, numpy
 
 
 down = []
 up = []
 neut = []
-filename='DE0.csv'
+file = 'DE1'
+filename = file + '.csv'
 data = np.genfromtxt(filename, delimiter=',', missing_values='NA', skip_header=2, filling_values=1, usecols=range(1,7))
 removeNA = data[:, -1] != 1
 data = data[removeNA, :]
@@ -92,24 +94,53 @@ def trial(n_trial):
     print(w)
     print(node1, node2, node3)
     print(down, up, neut)
-n_trial = 1000
+n_trial = 3
 trial(n_trial)
-csvfile = 'genes' + str(n_trial) + 'k.csv'
-csvname = 'genes' + str(n_trial)
+csvfile = 'genes' + str(n_trial) + filename
+csvname = 'genes' + str(n_trial) + file
 with open(csvfile, mode='w', newline='') as csvname:
     gene_writer = csv.writer(csvname, delimiter=',')
     gene_writer.writerow(down)
     gene_writer.writerow(up)
     gene_writer.writerow(neut)
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
 ###############################################################################
+
+genes = np.genfromtxt(csvfile, delimiter=',', dtype=str)
+print(genes.shape)
+downgenes = genes[0, :]
+print(downgenes.shape)
+upgenes = genes[1, :]
+neutgenes = genes[2, :]
+print(neutgenes.shape)
+down = collections.Counter(downgenes)
+down = np.asarray(down.most_common())
+print(down.shape)    
+
+up = collections.Counter(upgenes)
+up = np.asarray(up.most_common())
+print(up.shape) 
+
+neut = collections.Counter(neutgenes)
+neut = np.asarray(neut.most_common())
+print(neut.shape) 
+
+downplot = plt.bar(down[:, 0], down[:, 1])
+upplot = plt.hist(up)
+neutplot = plt.hist(neut)
+plt.show(downplot)
+plt.show(upplot)
+print(down, up, neut)
+
+both = []
+for item in down[:, 0]:
+    if item in up[:, 0]:
+        both.insert(0, item)
+print(both)
+
+csvfile1 = file + 'geneanalysis.csv'
+csvname1 = file + 'geneanalysis'
+with open(csvfile1, mode='w', newline='') as csvname1:
+    gene_writer = csv.writer(csvname1, delimiter=',')
+    gene_writer.writerow(down)
+    gene_writer.writerow(up)
+    gene_writer.writerow(neut)
