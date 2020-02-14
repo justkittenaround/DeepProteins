@@ -27,8 +27,6 @@ vis = visdom.Visdom()
 
 
 DATA_PATH = 'Bind_NOTBind' + '/'
-stride = 1
-
 
 NUM_CLASSES = 2
 N_LAYERS = 1
@@ -81,58 +79,46 @@ def purge(X):
 
 def hot_prots(X):
     X_bin = []
-    identity = np.eye(max([len(x) for x in X]), 26)
+    ide = np.eye(27, 27)
     for i in range(X.shape[0]):
         x_ = np.asarray(X[i])
         x_ = x_[1:]
-        x = identity[x_.astype(int)]
+        x = ide[x_.astype(int),:]
         X_bin.append(x)
-        if i == (X.shape[0]+1):
-            break
     return X_bin
 
 def split_train_val(X, Y):
-    r = np.random.choice(X.shape[0], X.shape[0]//5, replace=False)
-    Y = np.asarray(Y)
-    xval, yval = X[r, ...], Y[r, ...]
-    X = np.delete(X, r, axis=0)
+    r = np.random.choice(len(X), len(X)//5, replace=False)
+    xval = [X[i] for i in r]
+    yval = Y[r, ...]
+    X = [X[i] for i in range(len(X)) if i not in r]
     Y = np.delete(Y, r, axis=0)
     return X, Y, xval, yval
-
-def pad_batch(X):
-    padded_X = np.ones((batch_size, longest)) * pad_token
-    for i, x_len in enumerate(X_lengths):
-      sequence = X[i]
-      padded_X[i, 0:x_len] = sequence[:x_len]
-    return (padded_X)
 
 
 def load_batch(x, y):
     ins = []
-    batch_idx = np.random.choice(x.shape[0], BS)
-    batch_bin = x[batch_idx]
-    X_lengths = [len(sentence) for sentence in batch_bin]
+    batch_idx = np.random.choice(len(x), BS)
+    batch_bin = [x[i] for i in batch_idx]
+    X_lengths = [im.shape[0] for im in batch_bin]
     longest = max(X_lengths)
     for im in batch_bin:
-        ad = np.zeros((longest-im.shape[0], 26))
-        ad[:, 25] = 1
-        im = np.append(im, ad, axis=0)
+        ad = np.zeros((longest-im.shape[0], 27))
+        ad[:, 26] += 1
+        im = np.concatenate((im, ad), axis=0)
         ins.append(im)
     labels = torch.from_numpy(y[batch_idx]).to(torch.long)
     ins = torch.from_numpy(np.asarray(ins)).to(torch.float)
-    # dataset = TensorDataset(ins, labels)
     return ins, labels, X_lengths
 
 x = purge(x)
 xnot = purge(xnot)
 
-y = np.zeros(len(x))
-ynot = np.ones((len(xnot)))
+y = np.ones(len(x))
+ynot = np.zeros((len(xnot)))
 
 X = np.append(x, xnot)
 Y = np.append(y, ynot)
-
-X = np.asarray(hot_prots(X))
 
 X_lengths = [len(sentence) for sentence in X]
 pad_token = '26'
@@ -143,17 +129,14 @@ plt.hist(X_lengths, bins=100)
 plt.title('Lengths of Sequences in dataset.')
 # plt.show()
 
+X = hot_prots(X)
+
 x, y, xval, yval = split_train_val(X, Y)
 
 data = {'train': [x,y], 'val': [xval,yval]}
 
-
-vis.image(X[0], win='ins')
+vis.image(x[0], win='ins')
 vis.text(str(y[0]), win='labs')
-
-
-
-
 
 
 ''' model '''
@@ -169,11 +152,9 @@ class Classifier_LSTM(nn.Module):
         self.HIDDEN_DIM = HIDDEN_DIM
         self.BS = BS
         # self.embed = nn.Embedding(27,27, padding_idx=26)
-        self.lstm1 =  nn.LSTM(26, HIDDEN_DIM, num_layers=N_LAYERS, bias=True, batch_first=True)
-        self.fc = nn.Linear(HIDDEN_DIM, 2)
+        self.lstm1 =  nn.LSTM(27, HIDDEN_DIM, num_layers=N_LAYERS, bias=True, batch_first=True)
+        self.fc = nn.Linear(HIDDEN_DIM, NUM_CLASSES)
     def forward(self, inputs, X_lengths):
-        # e = self.embed(inputs)
-        # e = e[:, :, :, 0]
         X = torch.nn.utils.rnn.pack_padded_sequence(inputs, X_lengths, batch_first=True, enforce_sorted=False)
         X, hidden1 = self.lstm1(X)
         X, _ = torch.nn.utils.rnn.pad_packed_sequence(X, batch_first=True)
@@ -216,7 +197,7 @@ def train():
             else:
                 model.eval()
             x,y = data[phase]
-            for i in range(x.shape[0]//BS):
+            for i in range(len(x)//BS):
                 inputs, labels, X_lengths = load_batch(x,y)
                 inputs, labels = inputs.to(device), labels.to(device)
                 optimizer.zero_grad()
@@ -269,6 +250,10 @@ model, val_acc, val_loss, best_acc, time_elapsed = train()
 
 
 """vestigual code"""
+# e = self.embed(inputs)
+# e = e[:, :, :, 0]
+
+
 # val_loss_plt = plt.figure()
 # plt.plot(val_loss)
 # val_loss_plt.savefig(RESULTS + '/' + SAVE_NAME + '_val-loss.png')
@@ -295,3 +280,10 @@ model, val_acc, val_loss, best_acc, time_elapsed = train()
 # params = []
 # for name in model.named_parameters():
 #     params.append(name)
+
+# def pad_batch(X):
+#     padded_X = np.ones((batch_size, longest)) * pad_token
+#     for i, x_len in enumerate(X_lengths):
+#       sequence = X[i]
+#       padded_X[i, 0:x_len] = sequence[:x_len]
+#     return (padded_X)
