@@ -14,7 +14,7 @@ from urllib.request import Request, urlopen
 from skimage.util import view_as_windows as vaw
 import time
 import copy
-import visdom
+
 
 import torch
 import torch.nn as nn
@@ -23,23 +23,29 @@ import torch.nn.functional as F
 from torch.utils.data import TensorDataset
 from torch.utils.data import DataLoader
 
-vis = visdom.Visdom()
+import wandb
+
+wandb.init(project='proteins_lstm')
+wab = wandb.config
 
 
 DATA_PATH = 'Bind_NOTBind' + '/'
 
-NUM_CLASSES = 2
-N_LAYERS = 1
-INPUT_DIM = 93
-HIDDEN_DIM = 300
+wab.PURGE_LEN = 1000
+wab.DATA_SPLIT  = .5
 
-LR = .001
-BS = 16
-NUM_EPOCHS = 100
-OPTIM = 'adam'
+wab.NUM_CLASSES = 2
+wab.N_LAYERS = 1
+wab.INPUT_DIM = 27
+wab.HIDDEN_DIM = 100
+
+wab.LR = .001
+wab.BS = 16
+wab.NUM_EPOCHS = 25
+wab.OPTIM = 'adam'
 
 RESULTS = 'lstm/results'
-PRESAVE_NAME = RESULTS + ('/lstm-'+str(NUM_EPOCHS)+'e-'+str(LR)+'lr-'+str(BS)+'bs-'+str(HIDDEN_DIM)+'hd-'+str(OPTIM)+'opt-')
+PRESAVE_NAME = RESULTS + ('/lstm-'+str(wab.NUM_EPOCHS)+'e-'+str(wab.LR)+'lr-'+str(wab.BS)+'bs-'+str(wab.HIDDEN_DIM)+'hd-'+str(wab.OPTIM)+'opt-')
 
 
 
@@ -47,9 +53,13 @@ im1 = Image.open('seq.jpg', mode='r')
 im2 = Image.open('xray.jpg', mode='r')
 im1 = np.asarray(im1)
 im2 = np.asarray(im2)
-im2 = np.moveaxis(im2, 2, 0)
-vis.image(im1, win='seq')
-vis.image(im2, win='xray')
+# im2 = np.moveaxis(im2, 2, 0)
+
+
+#some stuff for wandb
+nl = wab.N_LAYERS
+hd = wab.HIDDEN_DIM
+ba = wab.BS
 
 
 
@@ -72,14 +82,14 @@ def purge(X):
     idxes_out = []
     X_lengths = [len(sentence) for sentence in X]
     for idx, x in enumerate(X_lengths):
-        if x > 1000:
+        if x > wab.PURGE_LEN:
             idxes_out.append(idx)
     X = X[[i for i in range(int(X.shape[0])) if i not in idxes_out],...]
     return X
 
 def hot_prots(X):
     X_bin = []
-    ide = np.eye(27, 27)
+    ide = np.eye(wab.INPUT_DIM, wab.INPUT_DIM)
     for i in range(X.shape[0]):
         x_ = np.asarray(X[i])
         x_ = x_[1:]
@@ -88,7 +98,7 @@ def hot_prots(X):
     return X_bin
 
 def split_train_val(X, Y):
-    r = np.random.choice(len(X), len(X)//5, replace=False)
+    r = np.random.choice(len(X), int(len(X)*wab.DATA_SPLIT), replace=False)
     xval = [X[i] for i in r]
     yval = Y[r, ...]
     X = [X[i] for i in range(len(X)) if i not in r]
@@ -98,12 +108,12 @@ def split_train_val(X, Y):
 
 def load_batch(x, y):
     ins = []
-    batch_idx = np.random.choice(len(x), BS)
+    batch_idx = np.random.choice(len(x), wab.BS)
     batch_bin = [x[i] for i in batch_idx]
     X_lengths = [im.shape[0] for im in batch_bin]
     longest = max(X_lengths)
     for im in batch_bin:
-        ad = np.zeros((longest-im.shape[0], 27))
+        ad = np.zeros((longest-im.shape[0], wab.INPUT_DIM))
         ad[:, 26] += 1
         im = np.concatenate((im, ad), axis=0)
         ins.append(im)
@@ -135,8 +145,6 @@ x, y, xval, yval = split_train_val(X, Y)
 
 data = {'train': [x,y], 'val': [xval,yval]}
 
-vis.image(x[0], win='ins')
-vis.text(str(y[0]), win='labs')
 
 
 ''' model '''
@@ -146,49 +154,43 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
 class Classifier_LSTM(nn.Module):
-    def __init__(self, N_LAYERS, HIDDEN_DIM, BS):
+    def __init__(self, nl, hd, ba):
         super(Classifier_LSTM, self).__init__()
-        self.N_LAYERS = N_LAYERS
-        self.HIDDEN_DIM = HIDDEN_DIM
-        self.BS = BS
-        # self.embed = nn.Embedding(27,27, padding_idx=26)
-        self.lstm1 =  nn.LSTM(27, HIDDEN_DIM, num_layers=N_LAYERS, bias=True, batch_first=True)
-        self.fc = nn.Linear(HIDDEN_DIM, NUM_CLASSES)
+        self.nl = nl
+        self.hd = hd
+        self.ba = ba
+        self.lstm1 =  nn.LSTM(wab.INPUT_DIM, hd, num_layers=nl, bias=True, batch_first=True)
+        self.fc = nn.Linear(hd, wab.NUM_CLASSES)
     def forward(self, inputs, X_lengths):
-        X = torch.nn.utils.rnn.pack_padded_sequence(inputs, X_lengths, batch_first=True, enforce_sorted=False)
-        X, hidden1 = self.lstm1(X)
-        X, _ = torch.nn.utils.rnn.pad_packed_sequence(X, batch_first=True)
+        X, hidden1 = self.lstm1(inputs)
         X = X[:,-1,:]
         out = self.fc(X)
         return out, hidden1
-    def init_hidden1(self, N_LAYERS, BS):
+    def init_hidden1(self, nl, ba):
         weight = next(model.parameters()).data
-        hidden1 = (weight.new(N_LAYERS, BS, HIDDEN_DIM).zero_().to(torch.int64).to(device),
-                  weight.new(N_LAYERS, BS, HIDDEN_DIM).zero_().to(torch.int64).to(device))
+        hidden1 = (weight.new(nl, ba, hd).zero_().to(torch.int64).to(device),
+                  weight.new(nl, ba, hd).zero_().to(torch.int64).to(device))
         return hidden1
 
-model = Classifier_LSTM(N_LAYERS, HIDDEN_DIM, BS)
+model = Classifier_LSTM(nl, hd,ba)
+
+# wandb.watch(model)
 
 model.to(device)
 
 
 criterion = nn.CrossEntropyLoss()
 
-if OPTIM == 'adam':
-    optimizer = torch.optim.Adam(model.parameters(), lr=LR)
-elif OPTIM == 'sgd':
-    optimizer = torch.optim.SGD(model.parameters(), lr=LR)
+if wab.OPTIM == 'adam':
+    optimizer = torch.optim.Adam(model.parameters(), lr=wab.LR)
+elif wab.OPTIM == 'sgd':
+    optimizer = torch.optim.SGD(model.parameters(), lr=wab.LR)
 
 
 def train():
-    since = time.time()
-    train_acc = []
-    train_loss = []
-    val_acc = []
-    val_loss = []
     best_acc = 0
-    for epoch in progressbar.progressbar(range(NUM_EPOCHS)):
-        h1 = model.init_hidden1(N_LAYERS, BS)
+    for epoch in range(wab.NUM_EPOCHS):
+        h1 = model.init_hidden1(wab.N_LAYERS, wab.BS)
         for phase in ['train', 'val']:
             running_loss = 0
             running_corrects = 0
@@ -197,7 +199,7 @@ def train():
             else:
                 model.eval()
             x,y = data[phase]
-            for i in range(len(x)//BS):
+            for i in range(len(x)//wab.BS):
                 inputs, labels, X_lengths = load_batch(x,y)
                 inputs, labels = inputs.to(device), labels.to(device)
                 optimizer.zero_grad()
@@ -212,35 +214,27 @@ def train():
                 running_corrects += torch.sum(preds == labels.data)
             epoch_loss = running_loss / len(x)
             epoch_acc = running_corrects.double() / len(x)
-            print('{} Loss: {:.4f} Acc: {:.4f}'.format(phase, epoch_loss, epoch_acc))
             if phase == 'val' and epoch_acc > best_acc:
                 best_acc = epoch_acc
                 best_model_wts = copy.deepcopy(model.state_dict())
             if phase == 'train':
-                train_acc.append(epoch_acc.cpu().numpy())
-                vis.line(train_acc, win='train_acc', opts=dict(title= '-train_acc'))
-                train_loss.append(epoch_loss)
-                vis.line(train_loss, win='train_loss', opts=dict(title= '-train_loss'))
+                wandb.log({'train_acc': epoch_acc.detach().cpu().item()}, step=epoch)
+                wandb.log({'train_loss': epoch_loss}, step=epoch)
             if phase == 'val':
-                val_acc.append(epoch_acc.cpu().numpy())
-                vis.line(val_acc, win='val_acc', opts=dict(title= '-val_acc'))
-                val_loss.append(epoch_loss)
-                vis.line(val_loss, win='val_loss', opts=dict(title= '-val_loss'))
+                wandb.log({'val_acc': epoch_acc.detach().cpu().item()}, step=epoch)
+                wandb.log({'val_loss': epoch_loss}, step=epoch)
     model.load_state_dict(best_model_wts)
     SAVE_NAME = PRESAVE_NAME + str(best_acc.detach().cpu().numpy())
     torch.save(model, SAVE_NAME)
-    time_elapsed = time.time() - since
-    val_loss_plt = plt.figure()
-    plt.plot(val_loss)
-    val_loss_plt.savefig(SAVE_NAME + '_val-loss.png')
-    val_acc_plt = plt.figure()
-    plt.plot(val_acc)
-    val_acc_plt.savefig(SAVE_NAME + '_val-acc.png')
-    print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
     print('Best val Acc: {:4f}'.format(best_acc))
     return model, val_acc, val_loss, best_acc, time_elapsed
 
-model, val_acc, val_loss, best_acc, time_elapsed = train()
+try:
+    model, val_acc, val_loss, best_acc, time_elapsed = train()
+except:
+    print('keyboard interupt! :3')
+    SAVE_NAME = PRESAVE_NAME + str(best_acc.detach().cpu().numpy())
+    torch.save(model, SAVE_NAME)
 
 
 
@@ -249,41 +243,7 @@ model, val_acc, val_loss, best_acc, time_elapsed = train()
 
 
 
-"""vestigual code"""
-# e = self.embed(inputs)
-# e = e[:, :, :, 0]
 
 
-# val_loss_plt = plt.figure()
-# plt.plot(val_loss)
-# val_loss_plt.savefig(RESULTS + '/' + SAVE_NAME + '_val-loss.png')
-# val_acc_plt = plt.figure()
-# plt.plot(val_acc)
-# val_acc_plt.savefig(RESULTS + '/' + SAVE_NAME + '_val-acc.png')
+
 #
-#
-
-# Y = np.zeros([len(Y_ol), 2])
-# identity = np.eye(2)
-# for idx, y in enumerate(Y_ol):
-#     y_hot = identity[y]
-#     Y[idx, ...] = y_hot
-
-
-# w_ii, w_if, w_ic, w_io = self.lstm.weight_ih_l0.chunk(4, 0)
-# w_hi, w_hf, w_hc, w_ho = self.lstm.weight_hh_l0.chunk(4, 0)
-
-# hidden = (weight.new(self.N_LAYERS, BS, self.HIDDEN_DIM).uniform_().to(device),
-              # weight.new(self.N_LAYERS, BS, self.HIDDEN_DIM).uniform_().to(device))
-
-
-# params = []
-# for name in model.named_parameters():
-#     params.append(name)
-
-# def pad_batch(X):
-#     padded_X = np.ones((batch_size, longest)) * pad_token
-#     for i, x_len in enumerate(X_lengths):
-#       sequence = X[i]
-#       padded_X[i, 0:x_len] = sequence[:x_len]
-#     return (padded_X)
