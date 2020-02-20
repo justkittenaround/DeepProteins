@@ -32,7 +32,7 @@ wab = wandb.config
 DATA_PATH = 'Bind_NOTBind' + '/'
 
 wab.PURGE_LEN = 1000
-wab.DATA_SPLIT  = .5
+wab.DATA_SPLIT  = .3
 
 wab.NUM_CLASSES = 2
 wab.N_LAYERS = 1
@@ -45,7 +45,7 @@ wab.NUM_EPOCHS = 25
 wab.OPTIM = 'adam'
 
 RESULTS = 'lstm/results'
-PRESAVE_NAME = RESULTS + ('/lstm-'+str(wab.NUM_EPOCHS)+'e-'+str(wab.LR)+'lr-'+str(wab.BS)+'bs-'+str(wab.HIDDEN_DIM)+'hd-'+str(wab.OPTIM)+'opt-')
+PRESAVE_NAME = RESULTS + ('/lstm-'+str(wab.NUM_EPOCHS)+'e-'+str(wab.LR)+'lr-'+str(wab.BS)+'bs-'+str(wab.HIDDEN_DIM)+'hd-'+str(wab.OPTIM)+'opt-'+str(wab.PURGE_LEN)+'max_len-'+str(wab.DATA_SPLIT)+'data_split-')
 
 
 
@@ -231,6 +231,10 @@ def train():
 
 try:
     model, val_acc, val_loss, best_acc, time_elapsed = train()
+    duration = 3 #sound info
+    freq = 333 #more sound info
+    os.system('play -nq -t alsa synth {} sine {}'.format(duration, freq)) #play a sound when the program is finished
+
 except:
     print('keyboard interupt! :3')
     SAVE_NAME = PRESAVE_NAME + str(best_acc.detach().cpu().numpy())
