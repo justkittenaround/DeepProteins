@@ -1,0 +1,5 @@
+IgE-binding protein+DNA-binding
+IgG-binding protein+DNA-binding
+IgA-binding protein+DNA-binding
+Immunoglobulin+DNA-binding
+Monoclonal antibody+DNA-binding
