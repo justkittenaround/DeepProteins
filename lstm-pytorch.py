@@ -3,25 +3,18 @@
 
 """
 
-import numpy as np
-import os, sys
-import matplotlib.pyplot as plt
+
 import csv
-from PIL import Image
-import progressbar
-import glob
-from urllib.request import Request, urlopen
-from skimage.util import view_as_windows as vaw
 import time
 import copy
-
+import os, sys
+import numpy as np
+import matplotlib.pyplot as plt
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-from torch.utils.data import TensorDataset
-from torch.utils.data import DataLoader
 
 import wandb
 
@@ -29,32 +22,29 @@ wandb.init(project='proteins_lstm')
 wab = wandb.config
 
 
-DATA_PATH = 'Data' + '/'
+DATA_PATH = 'Data6_IG-MHC-Tcell' + '/'
 
-wab.PURGE_LEN_t = 1000
-wab.PURGE_LEN_v = 3000
-wab.DATA_SPLIT  = .3
+wab.PURGE_LEN_min = 0
+wab.PURGE_LEN_max = 3000
+wab.DATA_SPLIT  = .2
+
 
 wab.NUM_CLASSES = 2
 wab.N_LAYERS = 1
 wab.INPUT_DIM = 27
-wab.HIDDEN_DIM = 100
+wab.HIDDEN_DIM = 400
+
+wab.DROPOUT = .8
 
 wab.LR = .001
-wab.BS = 16
-wab.NUM_EPOCHS = 100
+wab.BS = 1
+wab.NUM_EPOCHS = 200
 wab.OPTIM = 'adam'
+wab.PRETRAIN = False
 
 RESULTS = 'lstm/results'
-PRESAVE_NAME = RESULTS + ('/lstm-'+str(wab.NUM_EPOCHS)+'e-'+str(wab.LR)+'lr-'+str(wab.BS)+'bs-'+str(wab.HIDDEN_DIM)+'hd-'+str(wab.OPTIM)+'opt-'+str(wab.PURGE_LEN_t)+'max_len-'+str(wab.PURGE_LEN_v)+'max_val_len-'+str(wab.DATA_SPLIT)+'data_split-'+'train-up-to-purge_lenV')
+PRESAVE_NAME = RESULTS + ('/lstm-'+str(wab.NUM_EPOCHS)+'e-'+str(wab.LR)+'lr-'+str(wab.BS)+'bs-'+str(wab.HIDDEN_DIM)+'hd-'+str(wab.OPTIM)+'opt-'+str(wab.PURGE_LEN_max)+'max_len-'+str(wab.PURGE_LEN_min)+'min_len-'+str(wab.DATA_SPLIT)+'data_split-'+'')
 
-
-
-im1 = Image.open('seq.jpg', mode='r')
-im2 = Image.open('xray.jpg', mode='r')
-im1 = np.asarray(im1)
-im2 = np.asarray(im2)
-# im2 = np.moveaxis(im2, 2, 0)
 
 
 #some stuff for wandb
@@ -133,14 +123,19 @@ def load_batch(x, y):
     ins = torch.from_numpy(np.asarray(ins)).to(torch.float)
     return ins, labels, X_lengths
 
-
-x, _ = purge(x, wab.PURGE_LEN_v)
-xnot, _ = purge(xnot, wab.PURGE_LEN_v)
+#
+# x, _ = purge_min(x, wab.PURGE_LEN_min)
+# xnot, _ = purge_min(xnot, wab.PURGE_LEN_min)
+# x, _ = purge(x, wab.PURGE_LEN_max)
+# xnot, _ = purge(xnot, wab.PURGE_LEN_max)
 
 print('Before balance X:', len(x), 'Xnot', len(xnot))
 
+
 rand_choice = np.random.choice(len(xnot), len(x))
+xnot = np.asarray(xnot)
 xnot = xnot[rand_choice]
+
 
 print('After balance X:', len(x), 'Xnot', len(xnot))
 
@@ -149,22 +144,24 @@ ynot = np.zeros((len(xnot)))
 
 X = np.append(x, xnot)
 Y = np.append(y, ynot)
-# np.random.shuffle(Y)
+
 
 X_lengths = [len(sentence) for sentence in X]
 longest = max(X_lengths)
 
 print('The average length is ', sum(X_lengths)//len(X_lengths), 'The longest sequence is ', longest, '!')
-plt.hist(X_lengths, bins=100)
-plt.title('Lengths of Sequences in dataset.')
-plt.show()
+# plt.hist(X_lengths, bins=100)
+# plt.title('Lengths of Sequences in dataset.')
+# plt.show()
 
 X = hot_prots(X)
 
 x, y, xval, yval = split_train_val(X, Y)
 
-# x, idx_out = purge_min(x, wab.PURGE_LEN_t)
-# y = y[[i for i in range(y.shape[0]) if i not in idx_out]]
+
+if wab.PURGE_LEN_min > 0:
+    x, idx_out = purge_min(x, wab.PURGE_LEN_t)
+    y = y[[i for i in range(y.shape[0]) if i not in idx_out]]
 
 print('Train data and labels size:', len(x), len(y), 'Val data and labels size:', len(xval), len(yval))
 
@@ -179,26 +176,55 @@ data = {'train': [x,y], 'val': [xval,yval]}
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
-class Classifier_LSTM(nn.Module):
-    def __init__(self, nl, hd, ba):
-        super(Classifier_LSTM, self).__init__()
-        self.nl = nl
-        self.hd = hd
-        self.ba = ba
-        self.lstm1 =  nn.LSTM(wab.INPUT_DIM, hd, num_layers=nl, bias=True, batch_first=True)
-        self.fc = nn.Linear(hd, wab.NUM_CLASSES)
-    def forward(self, inputs, X_lengths):
-        X, hidden1 = self.lstm1(inputs)
-        X = X[:,-1,:]
-        out = self.fc(X)
-        return out, hidden1
-    def init_hidden1(self, nl, ba):
-        weight = next(model.parameters()).data
-        hidden1 = (weight.new(nl, ba, hd).zero_().to(torch.int64).to(device),
-                  weight.new(nl, ba, hd).zero_().to(torch.int64).to(device))
-        return hidden1
 
-model = Classifier_LSTM(nl, hd,ba)
+
+if wab.PRETRAIN == True:
+
+    class Classifier_LSTM(nn.Module):
+        def __init__(self, nl, hd, ba):
+            super(Classifier_LSTM, self).__init__()
+            self.nl = nl
+            self.hd = hd
+            self.ba = ba
+            self.lstm1 =  nn.LSTM(wab.INPUT_DIM, hd, num_layers=nl, bias=True, batch_first=True)
+            self.fc = nn.Linear(hd, wab.NUM_CLASSES)
+            self.sig = nn.Sigmoid()
+        def forward(self, inputs, X_lengths, hidden):
+            X, hidden1 = self.lstm1(inputs)
+            X = X[:,-1,:]
+            out = self.fc(X)
+            out = self.sig(out)
+            return out, hidden1
+        def init_hidden1(self, nl, ba):
+            weight = next(model.parameters()).data
+            hidden1 = (weight.new(nl, ba, hd).zero_().to(torch.int64),
+                      weight.new(nl, ba, hd).zero_().to(torch.int64))
+            return hidden1
+    model = torch.load('lstm/results/lstm-100e-0.001lr-1bs-100hd-adamopt-3000max_len-0min_len-0.5data_split-unbalanced')
+else:
+    class Classifier_LSTM(nn.Module):
+        def __init__(self, nl, hd, ba):
+            super(Classifier_LSTM, self).__init__()
+            self.nl = nl
+            self.hd = hd
+            self.ba = ba
+            self.lstm1 =  nn.LSTM(wab.INPUT_DIM, hd, num_layers=nl, bias=True, batch_first=True)
+            self.drop = nn.Dropout(p=wab.DROPOUT)
+            self.fc = nn.Linear(hd, wab.NUM_CLASSES)
+            self.sig = nn.Sigmoid()
+        def forward(self, inputs, X_lengths, hidden):
+            X, hidden1 = self.lstm1(inputs)
+            X = X[:,-1,:]
+            out = self.drop(X)
+            out = self.fc(X)
+            out = self.sig(out)
+            return out, hidden1
+        def init_hidden1(self, nl, ba):
+            weight = next(model.parameters()).data
+            hidden1 = (weight.new(nl, ba, hd).zero_().to(torch.int64).to(device),
+                      weight.new(nl, ba, hd).zero_().to(torch.int64).to(device))
+            return hidden1
+    model = Classifier_LSTM(nl, hd,ba)
 
 # wandb.watch(model)
 
@@ -230,7 +256,7 @@ def train():
                 inputs, labels = inputs.to(device), labels.to(device)
                 optimizer.zero_grad()
                 with torch.set_grad_enabled(phase == 'train'):
-                    outs, h = model(inputs, X_lengths)
+                    outs, h = model(inputs, X_lengths, h1)
                     _, preds = outs.max(1)
                     loss = criterion(outs, labels)
                     if phase == 'train':
@@ -250,7 +276,7 @@ def train():
                 wandb.log({'val_acc': epoch_acc.detach().cpu().item()}, step=epoch)
                 wandb.log({'val_loss': epoch_loss}, step=epoch)
     model.load_state_dict(best_model_wts)
-    SAVE_NAME = PRESAVE_NAME + str(best_acc.detach().cpu().numpy())
+    SAVE_NAME = PRESAVE_NAME + str(best_acc.detach().cpu().numpy()) +'.pt'
     torch.save(model, SAVE_NAME)
     print('Best val Acc: {:4f}'.format(best_acc))
     return model, val_acc, val_loss, best_acc, time_elapsed
@@ -268,6 +294,30 @@ os.system('play -nq -t alsa synth {} sine {}'.format(duration, freq)) #play a so
 
 
 
+
+
+# def load_input(X):
+#     X_lengths = [len(X)]
+#     X = np.expand_dims(X, 0)
+#     ins = torch.from_numpy(np.asarray(X)).to(torch.float)
+#     return ins, X_lengths
+#
+#
+# testxnot = hot_prots(np.asarray(testxnot))
+#
+# model = torch.load(SAVE_NAME, map_location=lambda storage, loc: storage)
+# model.eval()
+# h1 = model.init_hidden1(1, 16)
+# predictions = []
+# hiddens = []
+# inputs = []
+# corect = 0
+# for input in testxnot:
+#     ins, X_length = load_input(input)
+#     outs, h = model(ins, X_length, h1)
+#     _, preds = outs.max(1)
+#     print(outs)
+#     print(preds)
 
 
 
