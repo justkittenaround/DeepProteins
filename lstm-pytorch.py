@@ -15,14 +15,18 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+from torchvision import transforms
 
 import wandb
 
-wandb.init(project='proteins_lstm')
+
+
+wandb.init(project='proteins_lstm_R_flipped_v2')
 wab = wandb.config
 
 
 DATA_PATH = 'Data6_IG-MHC-Tcell' + '/'
+DATA_SAVE = 'lstm/data_split' + '/'
 
 wab.PURGE_LEN_min = 0
 wab.PURGE_LEN_max = 3000
@@ -32,18 +36,21 @@ wab.DATA_SPLIT  = .2
 wab.NUM_CLASSES = 2
 wab.N_LAYERS = 1
 wab.INPUT_DIM = 27
-wab.HIDDEN_DIM = 400
+wab.HIDDEN_DIM = 300
 
 wab.DROPOUT = .8
 
 wab.LR = .001
 wab.BS = 1
-wab.NUM_EPOCHS = 200
+wab.NUM_EPOCHS = 100
 wab.OPTIM = 'adam'
 wab.PRETRAIN = False
 
-RESULTS = 'lstm/results'
-PRESAVE_NAME = RESULTS + ('/lstm-'+str(wab.NUM_EPOCHS)+'e-'+str(wab.LR)+'lr-'+str(wab.BS)+'bs-'+str(wab.HIDDEN_DIM)+'hd-'+str(wab.OPTIM)+'opt-'+str(wab.PURGE_LEN_max)+'max_len-'+str(wab.PURGE_LEN_min)+'min_len-'+str(wab.DATA_SPLIT)+'data_split-'+'')
+rando = np.random.randint(0,100000,1)
+wab.RANDO = rando
+
+RESULTS = 'lstm/results_R_flipped_v2'
+PRESAVE_NAME = RESULTS + ('/lstm-'+str(rando)+'--'+str(wab.NUM_EPOCHS)+'e-'+str(wab.LR)+'lr-'+str(wab.BS)+'bs-'+str(wab.HIDDEN_DIM)+'hd-'+str(wab.OPTIM)+'opt-'+str(wab.DATA_SPLIT)+'data_split-'+'ALL_Flip')
 
 
 
@@ -57,16 +64,16 @@ ba = wab.BS
 """load the data"""
 
 x = []
-with open(DATA_PATH + 'AutoAntibodies/uniprot_data_batch_0.txt', 'r') as f:
+with open(DATA_PATH + 'AutoAntibody/uniprot_data_batch_0.txt', 'r') as f:
     reader = csv.reader(f, delimiter=',')
     for row in reader:
         x.append(row)
 
-xnot = []
-with open(DATA_PATH + 'Antibodies/uniprot_data_batch_0.txt') as f:
+xnot_ = []
+with open(DATA_PATH + 'Antibody/uniprot_data_batch_0.txt') as f:
     reader = csv.reader(f, delimiter=',')
     for row in reader:
-        xnot.append(row)
+        xnot_.append(row)
 
 
 def purge(X, purge_len):
@@ -93,8 +100,9 @@ def hot_prots(X):
     X_bin = []
     ide = np.eye(wab.INPUT_DIM, wab.INPUT_DIM)
     for i in range(X.shape[0]):
-        x_ = np.asarray(X[i])
-        x_ = x_[1:]
+        x_ = X[i]
+        x_ = np.asarray(x_[1:])
+        # x_ = np.asarray(x_[::-1])
         x = ide[x_.astype(int),:]
         X_bin.append(x)
     return X_bin
@@ -108,10 +116,13 @@ def split_train_val(X, Y):
     return X, Y, xval, yval
 
 
-def load_batch(x, y):
+def load_batch(x, y, phase):
     ins = []
     batch_idx = np.random.choice(len(x), wab.BS)
     batch_bin = [x[i] for i in batch_idx]
+    flip_chance = np.random.randint(0,10,1)
+    if flip_chance > 0.5 and phase == 'train':
+        batch_bin = np.flip(batch_bin)
     X_lengths = [im.shape[0] for im in batch_bin]
     longest = max(X_lengths)
     for im in batch_bin:
@@ -123,19 +134,35 @@ def load_batch(x, y):
     ins = torch.from_numpy(np.asarray(ins)).to(torch.float)
     return ins, labels, X_lengths
 
-#
+
 # x, _ = purge_min(x, wab.PURGE_LEN_min)
 # xnot, _ = purge_min(xnot, wab.PURGE_LEN_min)
 # x, _ = purge(x, wab.PURGE_LEN_max)
 # xnot, _ = purge(xnot, wab.PURGE_LEN_max)
 
-print('Before balance X:', len(x), 'Xnot', len(xnot))
+print('Before balance X:', len(x), 'Xnot', len(xnot_))
 
-
+rand_choice_test = np.asarray([1216, 3884, 1635, 2322, 1922, 1343, 2374, 1885, 3354, 3503, 3793,
+       3850, 3823,  969, 3869, 1548, 1151,  608, 3598, 3389,  799, 3090,
+       2360, 1909, 2705,  182, 2907, 2524, 3715, 2188, 3257, 1482, 1837])
+xnot = np.asarray([xnot_[i] for i in range(len(xnot_)) if i not in rand_choice_test])
 rand_choice = np.random.choice(len(xnot), len(x))
-xnot = np.asarray(xnot)
 xnot = xnot[rand_choice]
+f = open(DATA_SAVE + str(rando) + '.txt', 'w')
+f.write(str(rand_choice))
+f.close()
 
+# # xnot_test = [xnot_[i] for i in rand_choice_test if i not in rand_choice]
+# # for idx, s in enumerate(xnot_test):
+# #     letters = []
+# #     for char in s[1:]:
+# #         letters.append(chr(int(char)+97))
+# #     letters = map(lambda x:x.upper(), letters)
+# #     letters = ''.join(letters)
+# #     name = 'lstm/test_seqs/' + str(idx) + '.txt'
+# #     f = open(name, 'w')
+# #     f.write(letters)
+#     f.close()
 
 print('After balance X:', len(x), 'Xnot', len(xnot))
 
@@ -252,7 +279,7 @@ def train():
                 model.eval()
             x,y = data[phase]
             for i in range(len(x)//wab.BS):
-                inputs, labels, X_lengths = load_batch(x,y)
+                inputs, labels, X_lengths = load_batch(x,y, phase)
                 inputs, labels = inputs.to(device), labels.to(device)
                 optimizer.zero_grad()
                 with torch.set_grad_enabled(phase == 'train'):
@@ -276,25 +303,22 @@ def train():
                 wandb.log({'val_acc': epoch_acc.detach().cpu().item()}, step=epoch)
                 wandb.log({'val_loss': epoch_loss}, step=epoch)
     model.load_state_dict(best_model_wts)
-    SAVE_NAME = PRESAVE_NAME + str(best_acc.detach().cpu().numpy()) +'.pt'
+    SAVE_NAME = PRESAVE_NAME + str(epoch_acc.detach().cpu().item()) +'.pt'
     torch.save(model, SAVE_NAME)
-    print('Best val Acc: {:4f}'.format(best_acc))
-    return model, val_acc, val_loss, best_acc, time_elapsed
+    print('Best val Acc: {:4f}'.format(epoch_acc.detach().cpu().item()))
+    return model, best_acc
 
-try:
-    model, val_acc, val_loss, best_acc, time_elapsed = train()
-except:
-    print('keyboard interupt! :3')
-    SAVE_NAME = PRESAVE_NAME
-    torch.save(model, SAVE_NAME)
 
-duration = 3 #sound info
-freq = 400 #more sound info
-os.system('play -nq -t alsa synth {} sine {}'.format(duration, freq)) #play a sound when the program is finished
+model, best_acc = train()
 
 
 
 
+##VESTIGUAL CODE#####
+#
+# duration = 3 #sound info
+# freq = 400 #more sound info
+# os.system('play -nq -t alsa synth {} sine {}'.format(duration, freq)) #play a sound when the program is finished
 
 # def load_input(X):
 #     X_lengths = [len(X)]
