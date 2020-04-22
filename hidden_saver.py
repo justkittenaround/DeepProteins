@@ -76,7 +76,7 @@ rand_choice = np.random.choice(len(notseqs), 500)
 notseqs = notseqs[rand_choice]
 notseq_names = notseq_names[rand_choice]
 xseqs = np.append(seqs, notseqs)
-
+names = np.append(seq_names, notseq_names)
 X_bin = []
 m = []
 ide = np.eye(INPUT_DIM, INPUT_DIM)
@@ -125,9 +125,10 @@ class Classifier_LSTM(nn.Module):
 
 
 for model_name in os.listdir(ALPHA):
-    if '.pt' in model_name:
-        print('\n', model_name)
+    if '69475' in model_name:
+        # print('\n', model_name)
         for idx, seq in enumerate(X_bin):
+            # print(names[idx])
             h_all = []
             y = Y[idx]
             model = torch.load(ALPHA+model_name, map_location=lambda storage, loc: storage)
@@ -136,12 +137,13 @@ for model_name in os.listdir(ALPHA):
                 h1 = model.init_hidden1(1, 1)
                 ins, X_length = load_batch(seq[:tstep, :])
                 outs, hid = model(ins, X_length, h1)
-                hp = np.insert(np.abs(hid[0].detach().numpy().squeeze()).astype('str'), 0, [outs, y])
-                hp = np.insert(np.abs(hid[0].detach().numpy().squeeze()).astype('str'), 0, seq_names[idx])
+                _, preds = outs.max(1)
+                hp = np.insert(np.abs(hid[0].detach().numpy().squeeze()), 0, preds.detach().item())
+                hp = np.insert(np.abs(hid[0].detach().numpy().squeeze()), 0, y)
                 h_all.append(hp)
-        f = h5py.File('hidden.h5', 'a')
-        f.create_dataset(seq_names[idx], h_all)
-        f.close()
+            f = h5py.File('lstm/' + model_name + '-hidden.h5', 'a')
+            f.create_dataset(names[idx], data=h_all, dtype='uint16')
+            f.close()
 
 
 
