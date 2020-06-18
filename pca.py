@@ -18,7 +18,7 @@ from mpl_toolkits.mplot3d import Axes3D
 
 
 ###Protein Data
-HIDDENS_PATH = 'lstm/Top_models/hidden_states_bind_and_notbind' + '/'
+HIDDENS_PATH = 'lstm/Top_models/hidden_states_bind_and_notbind_randfill' + '/'
 SAVE = 'lstm/Top_models/pca_bind_and_notbind' + '/'
 
 do_PCA = True

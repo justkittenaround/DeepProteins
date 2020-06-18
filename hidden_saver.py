@@ -7,7 +7,7 @@ from PIL import Image
 import time
 import copy
 import h5py
-
+import pandas as pd
 
 import torch
 import torch.nn as nn
@@ -24,8 +24,6 @@ INPUT_DIM = 27
 nl = 1
 hd = 300
 ba = 1
-
-
 
 
 
@@ -72,7 +70,7 @@ def load_batch(x):
 
 
 seqs, seq_names, notseqs, notseq_names = load_seqs(COMP_SEQS)
-rand_choice = np.random.choice(len(notseqs), 500)
+rand_choice = np.random.choice(len(notseqs), 100)
 notseqs = notseqs[rand_choice]
 notseq_names = notseq_names[rand_choice]
 xseqs = np.append(seqs, notseqs)
@@ -124,33 +122,162 @@ class Classifier_LSTM(nn.Module):
 
 
 
-for model_name in os.listdir(ALPHA):
-    if '69475' in model_name:
-        # print('\n', model_name)
-        for idx, seq in enumerate(X_bin):
-            # print(names[idx])
-            h_all = []
-            y = Y[idx]
-            model = torch.load(ALPHA+model_name, map_location=lambda storage, loc: storage)
-            model.eval()
-            for tstep in range(1, seq.shape[0]+1):
-                h1 = model.init_hidden1(1, 1)
-                ins, X_length = load_batch(seq[:tstep, :])
-                outs, hid = model(ins, X_length, h1)
-                _, preds = outs.max(1)
-                hp = np.insert(np.abs(hid[0].detach().numpy().squeeze()), 0, preds.detach().item())
-                hp = np.insert(np.abs(hid[0].detach().numpy().squeeze()), 0, y)
-                h_all.append(hp)
-            f = h5py.File('lstm/' + model_name + '-hidden.h5', 'a')
-            f.create_dataset(names[idx], data=h_all, dtype='uint16')
-            f.close()
+# for model_name in os.listdir(ALPHA):
+#     i = 0
+#     if '.pt' in model_name:
+#         print('\n', model_name)
+#         print(i)
+#         i += 1
+#         df = {}
+#         for idx, seq in enumerate(X_bin):
+#             h_all = []
+#             y = Y[idx]
+#             model = torch.load(ALPHA+model_name, map_location=lambda storage, loc: storage)
+#             model.eval()
+#             for tstep in range(1, seq.shape[0]+1):
+#                 h1 = model.init_hidden1(1, 1)
+#                 ins, X_length = load_batch(seq[:tstep, :])
+#                 outs, hid = model(ins, X_length, h1)
+#                 outs = torch.nn.functional.softmax(outs)
+#                 _, preds = outs.max(1)
+#                 hp = np.abs(hid[0].detach().numpy().squeeze().astype('float32'))
+#                 h_all.append(hp)
+#             tag = str(names[idx]) + '-' + str(preds.detach().item())
+#             df.update({tag: h_all})
+            # f = h5py.File('lstm/' + model_name.split(']')[0] + '-hidden.h5', 'a')
+            # f.create_dataset(tag, data=h_all, dtype='float32')
+            # f.close()
 
 
 
 
 
+model_name = os.listdir(ALPHA)[0]
+
+df = {}
+for idx, seq in enumerate(X_bin):
+    h_all = []
+    y = Y[idx]
+    model = torch.load(ALPHA+model_name, map_location=lambda storage, loc: storage)
+    model.eval()
+    for tstep in range(1, seq.shape[0]+1):
+        h1 = model.init_hidden1(1, 1)
+        ins, X_length = load_batch(seq[:tstep, :])
+        outs, hid = model(ins, X_length, h1)
+        outs = torch.nn.functional.softmax(outs)
+        _, preds = outs.max(1)
+        hp = np.abs(hid[0].detach().numpy().squeeze().astype('float32'))
+        h_all.append(hp)
+    tag = str(names[idx]) + '-' + str(preds.detach().item())
+    df.update({tag: h_all})
 
 
+nc = {}
+ni = {}
+b = {}
+for idx, n in enumerate(names):
+     if 'notbind_fasta.txt-0' in n:
+             nc.update({n: X_bin[idx]})
+     elif 'notbind_fasta.txt-1' in n:
+             ni.update({n: X_bin[idx]})
+     else:
+             b.update({n: X_bin[idx]})
+
+print(len(ni), len(nc), len(b))
+
+bc = {}
+bi = {}
+for n in list(b.keys()):
+     if '-1' in n:
+             bc.update({n: X_bin[idx]})
+     elif '-0' in n:
+             bi.update({n: X_bin[idx]})
+
+print(len(bi), len(bc))
+
+
+master = pd.DataFrame(dict([ (k,pd.Series(np.asarray(v).flatten())) for k,v in df.items() ])).transpose()
+
+cat = []
+for i in range(len(master)):
+    if 'notbind' in master.index[i]:
+        cat.append(0)
+    else:
+        cat.append(1)
+
+master.insert(0, 'category', cat)
+master = master.fillna(0)
+
+import seaborn as sns
+from sklearn import datasets
+import matplotlib.pyplot as plt
+from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
+from mpl_toolkits.mplot3d import Axes3D
+
+pca = PCA(n_components=2)
+pca_result = pca.fit_transform(master[master.keys()[1:]].values)
+master['pca-one'] = pca_result[:,0]
+master['pca-two'] = pca_result[:,1]
+print('Explained variation per principal component: {}'.format(pca.explained_variance_ratio_))
+
+
+plt.figure(figsize=(16,10))
+sns.scatterplot(
+    x="pca-one", y="pca-two",
+    hue="category",
+    palette=sns.color_palette("hls", 2),
+    data=master,
+    legend="full",
+    alpha=0.3
+)
+plt.title('All Samples x Hidden')
+plt.savefig('lstm/All_2dPCA.png')
+plt.close()
+
+
+d = master.loc(nc.keys())
+b = master.loc(bc.keys())
+corrects = d.append(b)
+
+pca = PCA(n_components=2)
+pca_result = pca.fit_transform(corrects[corrects.keys()[1:]].values)
+corrects['pca-one'] = pca_result[:,0]
+corrects['pca-two'] = pca_result[:,1]
+print('Explained variation per principal component: {}'.format(pca.explained_variance_ratio_))
+
+
+plt.figure(figsize=(16,10))
+sns.scatterplot(
+    x="pca-one", y="pca-two",
+    hue="category",
+    palette=sns.color_palette("hls", 2),
+    data=corrects,
+    legend="full",
+    alpha=0.3
+)
+plt.title('All Correct Samples x Hidden')
+plt.savefig('lstm/AllCorrect_2dPCA.png')
+plt.close()
+
+
+a = corrects[1:-3].loc[corrects['category'] == 0]
+b = corrects[1:-3].loc[corrects['category'] == 1]
+
+
+lensa = []
+for x in list(nc.values()):
+    lensa.append(x.shape[0])
+lensb = []
+for x in list(bc.values()):
+    lensb.append(x.shape[0])
+plt.bar(np.arange(len(lensa)), lensa, color='b', label='notbind')
+plt.bar(np.arange(len(lensb)), lensb, color='r', label='bind')
+plt.title('Length of Correct Samples')
+plt.savefig('lstm/Length_Correct_Samples.png')
+
+
+df.loc[df['column_name'] == some_value]
 
 
 

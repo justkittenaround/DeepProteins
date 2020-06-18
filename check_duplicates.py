@@ -2,6 +2,7 @@
 import csv
 import os, sys
 import numpy as np
+import matplotlib.pyplot as plt
 from collections import Counter
 
 
@@ -43,7 +44,20 @@ print('# of bind testing bind sequences:', len(bseqs))
 print('# of bind testing not bind sequences:', len(nseqs))
 
 
-##Get the original data loaded in as strings in list
+##Get the original data loaded in as stringsame_bin = []
+scores = []
+for l in range(len(fkeys)):
+    topf = fkeys[l:l+10]
+    topi = [idxs[i] for i in topf]
+    s = []
+    x = []
+    for i, l in enumerate(topf):
+        w = files[l].split('.pt')[0]
+        s.append(float(w))
+        for idx in range(len(topi[i])):
+            x.append(topi[i][idx])
+    same_bin.append(len(x) - len(set(x)))
+    scores.append(sum(s)/len(s))s in list
 x = []
 with open(DATA_PATH + 'AutoAntibody/uniprot_data_batch_0.txt', 'r') as f:
     reader = csv.reader(f, delimiter=',')
@@ -157,27 +171,166 @@ with open(DATA_PATH + 'Antibody/uniprot_data_batch_0_new.txt', mode='w') as f:
 
 
 
+#######################
+import os
+import csv
+import numpy as np
+import matplotlib.pyplot as plt
+
+models = 'lstm/results_RF_v3'
+idx_folder = 'lstm/RF_v3'
+
+files = {}
+for f in os.listdir(models):
+    if '.pt' in f:
+        fscore = f.split('Flip')[-1]
+        fname = f.split('-')[1]
+        files.update({fname: fscore})
 
 
+idxs = {}
+for f in os.listdir(idx_folder):
+    if '.txt' in f:
+        fname = f.split('.')[0]
+        fbin = []
+        with open(idx_folder + '/' + f, mode='r') as fi:
+            reader = csv.reader(fi, delimiter=' ')
+            for row in reader:
+                if '' in row:
+                    row.remove('')
+                for el in row:
+                    if ']' in el:
+                        el = el.replace(']', '')
+                    if '[' in el:
+                        el = el.replace('[', '')
+                    if el != '':
+                        fbin.append(el)
+        idxs.update({fname: fbin})
+
+files = {k: v for k, v in sorted(files.items(), key=lambda item:item[1])}
+fkeys = list(files.keys())
+ikeys = list(idxs.keys())
+
+#####
+same_bin = []
+scores = []
+for l in range(len(fkeys)):
+    if l < 90:
+        topf = fkeys[l:l+10]
+        topi = [idxs[i] for i in topf]
+        s = []
+        x = []
+        for i, f in enumerate(topf):
+            w = files[f].split('.pt')[0]
+            s.append(float(w))
+            for idx in range(len(topi[i])):
+                x.append(topi[i][idx])
+        same_bin.append((len(x) - len(set(x)))/500)
+        scores.append(sum(s)/len(s))
+
+plt.bar(np.arange(len(same_bin)), same_bin, width=1)
+plt.title('Amount of shared Data Samples per 10 Models')
+plt.savefig(idx_folder+'/Amount of shared Data Samples per 10 Models')
+plt.close()
+plt.bar(np.arange(len(scores)), scores, width=1)
+plt.title('Accuracy of Data Samples per 10 Models')
+plt.savefig(idx_folder+'/Accuracy of Data Samples per 10 Models')
+plt.close()
+plt.bar(np.arange(len(scores)), scores, width=1, color='b')
+plt.bar(np.arange(len(same_bin)), same_bin, width=1, color='r')
+plt.title('Percent Data Shared per 10 Models by Accuracy')
+plt.savefig(idx_folder+'/Percent Data Shared per 10 Models by Accuracy')
+plt.close()
+
+acc = same_bin
+
+multirans = []
+for i in range(1000):
+    same_bin = []
+    scores = []
+    for l in range(len(fkeys)):
+        if l < 90:
+            topf = [fkeys[i] for i in np.random.choice(len(fkeys), 10, replace=False)]
+            topi = [idxs[i] for i in topf]
+            s = []
+            x = []
+            for i, f in enumerate(topf):
+                w = files[f].split('.pt')[0]
+                s.append(float(w))
+                for idx in range(len(topi[i])):
+                    x.append(topi[i][idx])
+            same_bin.append((len(x) - len(set(x)))/500)
+            scores.append(sum(s)/len(s))
+    multirans.append(sum(same_bin)/len(same_bin))
+
+plt.bar(np.arange(len(same_bin)), same_bin, width=1)
+plt.title('Amount of shared Data Samples per 10 Models')
+plt.savefig(idx_folder+'/Amount of shared Data Samples per 10 Models at Random')
+plt.close()
+plt.bar(np.arange(len(scores)), scores, width=1)
+plt.title('Accuracy of Data Samples per 10 Models')
+plt.savefig(idx_folder+'/Accuracy of Data Samples per 10 Models at Random')
+plt.close()
+plt.bar(np.arange(len(scores)), scores, width=1, color='b')
+plt.bar(np.arange(len(same_bin)), same_bin, width=1, color='r')
+plt.title('Percent Data Shared per 10 Models at Random Accuracy')
+plt.savefig(idx_folder+'/Percent Data Shared per 10 Models at Random Accuracy')
+plt.close()
 
 
+fig = plt.figure()
+ax = plt.subplot(111)
+ax.bar(np.arange(len(scores)), same_bin, color='b', label='random')
+ax.bar(np.arange(len(same_bin)), acc, color='g', label='accuracy')
+plt.title('Percent of data shared for models by grouping')
+ax.legend()
+plt.savefig(idx_folder+'/Percent of data shared for models by grouping')
+plt.close()
 
 
+macc = sum(acc)/len(acc)
+mmr = sum(multirans)/len(multirans)
+print(macc, mmr)
+
+for a in acc:
+    print(a, '\n')
 
 
+####here
+def pair_check(dist):
+    same_bin_f = []
+    scores_f = []
+    for l in range(len(fkeys)-dist):
+        topf = fkeys[l], fkeys[abs(l+dist)]
+        topi = [idxs[i] for i in topf]
+        s = []
+        x = []
+        for i, f in enumerate(topf):
+            w = files[f].split('.pt')[0]
+            s.append(float(w))
+            for idx in range(len(topi[i])):
+                x.append(topi[i][idx])
+        same_bin_f.append((len(x) - len(set(x)))/len(x))
+        scores_f.append(sum(s)/len(s))
+    return same_bin_f, scores_f
 
 
+all_bin = []
+all_scores = []
+all_m = []
+for n in range(1,50):
+    sb, sc = pair_check(n)
+    all_bin.append(sb)
+    all_scores.append(sc)
+    all_m.append(sum(sb)/len(sb))
 
-
-
-
-
-
-
-
-
-
-
+xax = np.arange(len(all_m))
+plt.bar(xax, all_m)
+plt.title('Percent of data shared for models by pairing')
+plt.xlabel('Pair Distance')
+plt.ylabel('% Shared')
+plt.savefig(idx_folder+'/Percent of data shared for models by pairs')
+plt.close()
 
 
 
