@@ -201,16 +201,18 @@ b = {k:v for k,v in sorted(both.items(), key=lambda item:item[1])}
 print('\n', 'Both-Alpha-Models:', b)
 print('Both-avg:', np.average(s))
 
-
+models = os.listdir('results/100FLIPPED')
 ms = {}
 for m in models:
     if '.pt' in m:
-        ms.update({m.split(']')[0]: (m.split('.pt')[0].split('-')[-1])})
+        ms.update({m.split('--')[0]: (m.split('.pt')[0].split('-')[-1])})
 
+m = {k:v for k,v in sorted(ms.items(), key=lambda item:item[1])}
 
-
-
-
+vals = np.asarray(list(m.values())).astype(float)
+avg = np.average(vals)
+max_v = np.max(vals)
+min_v = np.min(vals)
 
 
 

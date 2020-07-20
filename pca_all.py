@@ -1,14 +1,19 @@
 
-import numpy as np
-import os, sys
-import matplotlib.pyplot as plt
 import csv
-from PIL import Image
+import cv2
 import time
 import copy
 import h5py
+import random
+import os, sys
+import numpy as np
 import pandas as pd
+from PIL import Image
 from scipy import stats
+import matplotlib.pyplot as plt
+
+from numpy import cov
+from scipy.stats import pearsonr
 
 import torch
 import torch.nn as nn
@@ -81,121 +86,72 @@ def get_data():
     return bhot_seqs, nhot_seqs, sxtrain, sxtest, sntrain, sntest
 
 
-bhot_seqs, nhot_seqs, sxtrain, sxtest, sntrain, sntest = get_data()
+bhot_seqs, nhot_seqs, xtrain, xtest, ntrain, ntest = get_data()
 
-sxtrain = sorted(sxtrain, key=len)
-sxtest = sorted(sxtest, key=len)
-sntrain = sorted(sntrain, key=len)
-sntest = sorted(sntest, key=len)
-print(len(sxtrain), len(sxtest), len(sntrain), len(sntest))
+#########################
+dd = ['QVKLLESGPELVKPGASVKMSCKASGYTFTSYVMHWVKQKPGQGLEWIGYINPYNDGTKYNEKFKGKATLTSDKSSSTAYMELSSLTSEDSAVYYCVRGGYRPYYAMDYWGQGTSVTVSSAKTTPPSVYPLAPGSAAQTNSMVTLGCLVKGYFPEPVTVTWNSGSLSSGVHTFPAVLQSDLYTLSSSVTVPSSTWPSETVTCNVAHPASSTKVDKKIVPRDCTSHHHHHHELQMTQSPASLSASVGETVTITCRASENIYSYLAWYQQKQGKSPQLLVYNAKTLAEGVPSRFSGSGSGTQFSLKINSLQPEDFGSYYCQHHYGTPLTFGAGTKLELKRADAAPTVSIFPPSSEQLTSGGASVVCFLNNFYPKDINVKWKIDGSERQNGVLNSWTDQDSKDSTYSMSSTLTLTKDEYERHNSYTCEATHKTSTSPIVKSFNRNEC']
+ds = []
+for c in dd[0]:
+    ds.append(int(ord(c.lower())-97))
 
-allx = np.append(sxtrain, sxtest)
-alln = np.append(sntrain, sntest)
+ds = np.expand_dims(ds, 0)
+
+allx = np.tile(ds, (81,1))
+alln = np.append(ntrain, ntest)
+alln = sorted(alln, key=len)
+
 
 def insert_bind():
     for idx, s in enumerate(allx):
-        alln[idx][24:35] = s[24:35]
-        alln[idx][49:57] = s[49:57]
-        alln[idx][89:98] = s[89:98]
-        if alln[idx].shape[0] >= 133:
-            alln[idx][128:133] = s[128:133]
-        if alln[idx].shape[0] >= 164:
-            alln[idx][147:163] = s[147:163]
-        if alln[idx].shape[0] >= 200:
-             alln[idx][192:199] = s[192:199]
-
-def insert_bind_nb():
-    for idx, s in enumerate(allx):
-        alln[idx][11:22] = s[24:35]
-        alln[idx][37:45] = s[49:57]
-        alln[idx][64:73] = s[89:98]
-        if s.shape[0] >= 133:
-            alln[idx][0:5] = s[128:133]
-        if s.shape[0] >= 164:
-            alln[idx][100:116] = s[147:163]
-        if alln[idx].shape[0] >= 184:
-             alln[idx][177:184] = s[192:199]
-
-def insert_nonbind():
-    for idx, s in enumerate(allx):
-        alln[idx][24:35] = s[11:22]
-        alln[idx][49:57] = s[37:45]
-        alln[idx][89:98] = s[64:73]
-        if alln[idx].shape[0] >= 133:
-            alln[idx][128:133] = s[0:5]
-        if alln[idx].shape[0] >= 164:
-            alln[idx][147:163] = s[100:116]
-        if alln[idx].shape[0] >= 200:
-             alln[idx][192:199] = s[177:184]
-
-def insert_nonbind_nonsite():
-    for idx, s in enumerate(allx):
-        alln[idx][11:22] = s[11:22]
-        alln[idx][37:45] = s[37:45]
-        alln[idx][64:73] = s[64:73]
-        alln[idx][0:5] = s[0:5]
-        alln[idx][100:116] = s[100:116]
-        if alln[idx].shape[0] >= 184:
-             alln[idx][177:184] = s[177:184]
+        alln[idx][30:36] = s[30:36]
+        alln[idx][49:67] = s[49:67]
+        alln[idx][98:110] = s[98:110]
+        if alln[idx].shape[0] > 253:
+            alln[idx][253:265] = s[253:265]
+        if alln[idx].shape[0] > 278:
+            alln[idx][278:287] = s[278:287]
+        if alln[idx].shape[0] == 325:
+            alln[idx][318:-1] = s[318:324]
+        if alln[idx].shape[0] > 328:
+            alln[idx][318:328] = s[318:328]
+    return alln
 
 def knockout():
     for idx, s in enumerate(allx):
-        s[24:35] = alln[idx][24:35]
-        s[49:57] = alln[idx][49:57]
-        s[89:98] = alln[idx][89:98]
-        if alln[idx].shape[0] < 133:
-            s[128:133] = alln[idx][-5:]
-        if alln[idx].shape[0] >= 133:
-            s[128:133] = alln[idx][128:133]
-        if s.shape[0] >= 147 and alln[idx].shape[0] <= 164:
-            c = s.shape[0]-147
-            s[147:] = alln[idx][-c:]
-        if s.shape[0] >= 164 and alln[idx].shape[0] >= 164:
-            s[147:163] = alln[idx][147:163]
-        if s.shape[0] >=164 and alln[idx].shape[0] <= 164:
-            s[147:163] = alln[idx][-16:]
-        if s.shape[0] and alln[idx].shape[0] >= 200:
-             s[192:199] = alln[idx][192:199]
-        if s.shape[0] >= 200 and alln[idx].shape[0] <= 200:
-            s[192:199] = alln[idx][-7:]
+        r = random.randint(5,81)
+        s[30:35] = alln[idx][30:35]
+        s[49:66] = alln[idx][49:66]
+        s[98:109] = alln[idx][98:109]
+        if alln[idx].shape[0] < 252:
+            s[253:264] = alln[idx+r][253:264]
+            s[318:327] = alln[idx+r][318:327]
+        if alln[idx].shape[0] > 252:
+            s[253:264] = alln[idx][253:264]
+        if alln[idx].shape[0] > 277:
+            s[278:286] = alln[idx][278:286]
+        if alln[idx].shape[0] == 325:
+            s[318:324] = alln[idx][318:-1]
+        if alln[idx].shape[0] > 327:
+            s[318:327] = alln[idx][318:327]
+    return allx
 
-def knockout_nb():
+def knockout_peaks():
     for idx, s in enumerate(allx):
-        s[11:22] = alln[idx][11:22]
-        s[37:45] = alln[idx][37:45]
-        s[64:73] = alln[idx][64:73]
-        s[0:5] = alln[idx][0:5]
-        s[100:116] = alln[idx][100:116]
-        if s.shape[0] and alln[idx].shape[0] >= 184:
-             s[177:184]= alln[idx][177:184]
-        if s.shape[0] >= 200 and alln[idx].shape[0] <= 184:
-            s[177:184] = alln[idx][-7:]
-
-def swap():
-    for s in allx:
-        s[11:22] ^= s[24:35]
-        s[24:35] ^= s[11:22]
-        s[11:22] ^= s[24:35]
-        s[37:45] ^= s[49:57]
-        s[49:57] ^= s[37:45]
-        s[37:45] ^= s[49:57]
-        s[64:73] ^= s[89:98]
-        s[89:98] ^= s[64:73]
-        s[64:73] ^= s[89:98]
-        s[0:5] ^= s[128:133]
-        s[128:133] ^= s[0:5]
-        s[0:5] ^= s[128:133]
-        if s.shape[0] >= 164:
-            s[100:116] ^= s[147:163]
-            s[147:163] ^= s[100:116]
-            s[100:116] ^= s[147:163]
-        if s.shape[0] >= 200:
-             s[177:184] ^= s[192:199]
-             s[192:199] ^= s[177:184]
-             s[177:184] ^= s[192:199]
+        if alln[idx].shape[0]<400:
+            r = random.randint(7,81)
+            d = 399 - alln[idx].shape[0]
+            y = np.append(alln[idx], alln[r][-d:])
+            s[w] = y[w]
+        else:
+            s[w] = alln[idx][w]
+    return allx
 
 
-X = [np.flip(i) for i in allx]
+if insert:
+    X = [np.flip(i) for i in alln]
+if knockout:
+    X = [np.flip(i) for i in allx]
+
 sbhot_seqs = hot_prots(X)
 print('# of bind test sequences:', len(sbhot_seqs))
 
@@ -225,7 +181,6 @@ class Classifier_LSTM(nn.Module):
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-
 for modelp in os.listdir(MODEL_PATH):
     if '.pt' in modelp and '.npy' not in modelp:
         h_all = []
@@ -243,18 +198,18 @@ for modelp in os.listdir(MODEL_PATH):
             elif phase == 'swap':
                 data = sbhot_seqs
             elif phase == 'dna':
-                data = x
+                data = hot_prots([np.flip(i) for i in ds])
             for idx, seq in enumerate(data):
                 h_steps = []
                 for tstep in range(1, seq.shape[0]+1):
-                    model = torch.load(MODEL_PATH+modelp)
+                    model = torch.load(MODEL_PATH+modelp, map_location='cpu')
                     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
-                    model.to(device)
+                    # model.to(device)
                     model.eval()
                     optimizer.zero_grad()
                     h1 = model.init_hidden1(1, 1)
                     ins, X_length = load_batch(seq[:tstep, :])
-                    ins = ins.to(device)
+                    # ins = ins.to(device)
                     outs, hid = model(ins, X_length, h1)
                     _, preds = outs.max(1)
                     h_steps.append(np.abs(hid[0].detach().cpu().numpy().squeeze()).astype('str'))
@@ -281,30 +236,30 @@ for modelp in os.listdir(MODEL_PATH):
         # np.save((MODEL_PATH+modelp.split(']')[0]+'-h_all-'), np.asarray(h_all))
         # np.save((MODEL_PATH+modelp.split(']')[0]+'-'+'-bind_acc--'+str(len(bind_acc))), np.asarray(bind_acc))
         # np.save((MODEL_PATH+modelp.split(']')[0]+'-'+'-no_acc--'+str(len(nob_acc))), np.asarray(nob_acc))
-        np.save((MODEL_PATH+modelp.split(']')[0]+'-knockout_all'), np.asarray(sh_all))
-        np.save((MODEL_PATH+modelp.split(']')[0]+'-'+'-knockout_acc-'+str(len(swap_acc))), np.asarray(swap_acc))
-        # np.save((MODEL_PATH+modelp.split(']')[0]+'-dna_all'), np.asarray(dna_all))
-        # np.save((MODEL_PATH+modelp.split(']')[0]+'-'+'-dna_acc-'+str(len(dna_acc))), np.asarray(swap_acc))
+        np.save((MODEL_PATH+'knockout/'+modelp.split(']')[0]+'-knockout_all'), np.asarray(sh_all))
+        np.save((MODEL_PATH+'knockout/'+modelp.split(']')[0]+'-'+'-knockout_acc-'+str(len(swap_acc))), np.asarray(swap_acc))
+        # np.save((MODEL_PATH+'dna-1/'+modelp.split('--')[0]+'-dna_all'), np.asarray(dna_all))
+        # np.save((MODEL_PATH+'dna-1/'+modelp.split('--')[0]+'-'+'-dna_acc-'+str(len(dna_acc))), np.asarray(dna_acc))
 
 
 #
 
-
-
 np_load_old = np.load
 np.load = lambda *a,**k: np_load_old(*a, allow_pickle=True, **k)
 
-MODEL_PATH = 'results/top_models/topall/'
+
+
+MODEL_PATH = 'results/top_models/knockout_peaks/'
 files = os.listdir(MODEL_PATH)
 files.sort()
-bind = []
-nob = []
+# bind = []
+# nob = []
+# dna = []
 swap = []
-dna = []
 blen = 0
 nlen = 0
 for file in files:
-    if '.npy' in file:
+    if '.npy' in file :
         if 'bind_acc' in file and 'F' not in file:
             b = np.load(MODEL_PATH+file)
             print(file)
@@ -318,36 +273,15 @@ for file in files:
             bind.append(np.asarray(h[:81])[b])
             nob.append(np.asarray(h[81:])[n])
             print(file)
-        if 'insert_acc' in file and 'F' not in file:
+        if 'knockout_peaks_acc' in file and 'F' not in file:
             s = np.load(MODEL_PATH+file)
             print(file)
-        if 'insert_all' in file and 'F' not in file:
+        if 'knockout_peaks_all' in file and 'F' not in file:
             print(file)
             swap.append(np.asarray(np.load(MODEL_PATH+file))[s])
         if 'dna_all' in file and 'F' not in file:
             print(file)
             dna.append(np.asarray(np.load(MODEL_PATH+file)))
-#
-#
-# all = []
-# shapes = []
-# for b in bind:
-#     for s in b:
-#         all.append(s[1:].astype(float))
-#         shapes.append(len(s))
-#
-# for b in nob:
-#     for s in b:
-#         all.append(s[1:].astype(float))
-#         shapes.append(len(s))
-#
-# m = max(shapes)
-# shapes = 0
-# b = 0
-# n = 0
-# h = 0
-# nob = 0
-# bind = 0
 
 
 
@@ -384,24 +318,14 @@ def f(x):
 def smooth(bin, k):
     return np.convolve(bin, np.ones(k)/k, 'same')
 
-# def makey(m):
-#         Y = np.zeros(200)
-#         Y[24:35] = m
-#         Y[49:57] = m
-#         Y[89:98] = m
-#         Y[(97+31):(97+36)] = m
-#         Y[(97+50):(97+66)] = m
-#         Y[(97+95):-1] = m
-#         return Y
-
 def makey(m):
-        Y = np.zeros(329)
-        Y[30:36] = m
-        Y[49:67] = m
-        Y[98:110] = m
-        Y[253:265] = m
-        Y[278:287] = m
-        Y[318:328] = m
+        Y = np.zeros(400)
+        Y[30:35] = m
+        Y[49:66] = m
+        Y[98:109] = m
+        Y[253:264] = m
+        Y[278:286] = m
+        Y[318:327] = m
         return Y
 
 def makeshift(m):
@@ -421,118 +345,137 @@ def normies(bin):
     norm = norm/std
     return norm
 
+def process(bin):
+    bb = []
+    for b in bin:
+        for s in b:
+            bb.append(np.flip(s[1:].reshape(s.shape[0]//300, 300) ,0))
+    bclip = []
+    for b in bb:
+        bclip.append(b[:400,].astype(float))
+    shapes, bpadbin, bavgs = pad(bclip)
+    bsum = np.sum(np.asarray(bpadbin), axis=0)
+    bss = np.sum(bsum, axis=1)
+    b = f(bss)
+    return b
 
-# bind = h_all[:81]
-# nob = h_all[81:]
-# bind = bind[bacc]
-# nob = nob[nacc]
-# swap = np.asarray(sh_all)[swap_acc]
-# print(len(bind), len(nob), len(swap))
-
-bb = []
-nn = []
-for b in bind:
-    for s in b:
-        # bb.append(s[1:].astype(float))
-        bb.append(np.flip(s[1:].reshape(s.shape[0]//300, 300) ,0))
-    # bb.append(b[1:].reshape(b.shape[0]//300, 300))
-
-for b in nob:
-    for s in b:
-        # nn.append(s[1:].astype(float))
-        nn.append(np.flip(s[1:].reshape(s.shape[0]//300, 300), 0))
-    # nn.append(b[1:].reshape(b.shape[0]//300, 300))
-
-sn = []
-for b in swap:
-    for s in b:
-        sn.append(np.flip(s[1:].reshape(s.shape[0]//300, 300), 0))
-
-dn = []
-for b in dna:
-    for s in b:
-        dn.append(np.flip(s[1:].reshape(s.shape[0]//300, 300), 0))
-
-
-bclip = []
-for b in bb:
-    bclip.append(b[:400,].astype(float))
-
-nclip = []
-for b in nn:
-    nclip.append(b[:400,].astype(float))
-
-sclip = []
-for b in sn:
-    sclip.append(b[:200,].astype(float))
-
-dclip = []
-for b in dn:
-    dclip.append(b[:400,].astype(float))
-
-shapes, bpadbin, bavgs = pad(bclip)
-shapes, npadbin, navgs = pad(nclip)
-shapes, spadbin, savgs = pad(sclip)
-shapes, dpadbin, savgs = pad(dclip)
-
-bsum = np.sum(np.asarray(bpadbin), axis=0)
-nsum = np.sum(np.asarray(npadbin), axis=0)
-ssum = np.sum(np.asarray(spadbin), axis=0)
-dsum = np.sum(np.asarray(dpadbin), axis=0)
-
-bss = np.sum(bsum, axis=1)
-nss = np.sum(nsum, axis=1)
-sss = np.sum(ssum, axis=1)
-dss = np.sum(dsum, axis=1)
-
-plt.imshow(bsum-nsum)
-plt.xlabel('node')
-plt.ylabel('time-step')
-plt.show()
-
-b = f(bss)
-n = f(nss)
-s = f(sss)
-# d = f(dss)
-
-plt.plot(bss, 'b', label='bind')
-plt.plot(nss, 'r', label='nonbind')
-plt.plot(dss, 'g', label='dna')
-plt.legend()
-plt.show()
-
-plt.close()
-plt.plot(b, 'b', label='bind')
-plt.plot(n, 'r', label='nonbind')
-plt.plot(s, 'g', label='knockout')
-plt.legend()
-plt.show()
-
-
-error = 100
-for i in np.arange(1,15):
-    t = 329
-    a = smooth(np.abs(normies(b)-normies(n)), i)
-    # a = smooth(thresh(normies(b)-normies(n)), i)
-    Y = makey(max(a))
-    # a_s = smooth(thresh(np.abs(normies(s)-normies(n))), i)
-    # a_s = smooth(thresh(normies(s)-normies(n)), i)
-    # Ys = makeshift(max(a_s))
-    e = ((np.sum(a[:t]-Y[:t]))**2)/t
-    print('Error = ', e, i)
-    plt.close()
-    plt.plot(a[:t], 'b')
-    # plt.plot(a_s[:t], 'r')
-    plt.plot(Y[:t], 'b')
+def plot_dna():
+    i =6
+    t = 400
+    ab = smooth(np.abs(normies(d)-normies(n)), i)
+    Y = makey(max(ab))
+    plt.plot(ab[:t], 'g', label='DNA-1')
+    plt.title('DNA-1 Activations ')
+    plt.plot(Y[:t], 'b', label='literature bind site')
     plt.fill(Y[:t])
-    # plt.plot(Ys[:t], 'orange')
-    # plt.fill(Ys[:t], 'orange')
     plt.xlabel('time-step')
-    plt.ylabel('activation difference')
+    plt.ylabel('activation ')
+    plt.legend(loc='upper right')
     plt.show()
-    if e < error:
-        error = e
-        best = i
+
+def plot_comparison():
+    i =6
+    t = 400
+    a = smooth(np.abs(normies(s)-normies(n)), i)
+    ab = smooth(np.abs(normies(d)-normies(n)), i)
+    Y = makey(max(ab))
+    plt.plot(a[:t], 'orange', label='Peak Knockout')
+    plt.plot(ab[:t], 'red', label='DNA-1')
+    plt.title('DNA-1 and Peak Knockout Activations')
+    plt.plot(Y[:t], 'b', label='literature bind site')
+    plt.fill(Y[:t])
+    plt.xlabel('time-step')
+    plt.ylabel('activation ')
+    plt.legend(loc='upper right')
+    plt.show()
+
+def plot_minus_knockout():
+    i =6
+    t = 400
+    a = smooth(np.abs(normies(s)-normies(n)), i)
+    ab = smooth(np.abs(normies(d)-normies(n)), i)
+    plt.plot(thresh(ab-a), 'r', label='DNA1-Knockout')
+    plt.title('Difference w/DNA1 and Knockout Activation')
+    Y = makey(max(ab-a))
+    plt.plot(Y[:t], 'b', label='literature bind site')
+    plt.fill(Y[:t])
+    plt.xlabel('time-step')
+    plt.ylabel('activation ')
+    plt.legend(loc='upper right')
+    plt.show()
+
+
+b = process(bind)
+n = process(nob)
+d = process(dna)
+s = process(swap)
+
+
+for num in np.arange(0,1, .1):
+
+i = 6
+t = 400
+num = .58
+a = smooth(np.abs(normies(s)-normies(n)), i)
+ab = smooth(np.abs(normies(d)-normies(n)), i)
+# x = ab
+x = thresh(ab-a)
+x = np.where(x>np.max(x)*(num), x, 0)
+# plt.close()
+plt.plot(x, 'orange', label='DNA1-Peak Knockout')
+plt.legend(loc='upper right')
+Y = makey(max(x))
+plt.plot(Y, label='Literature Bind Site')
+plt.fill(Y)
+# plt.title('DNA-1 - Knockout Activations > '+str(num)+' max')
+plt.show()
+# plt.savefig('results/top_models/subseqs/knockout_peaks.png')
+c = cov(x,Y)
+corr, _ = pearsonr(x,Y)
+print(c, '\n', '\n', corr, '\n')
+
+    if corr > best:
+            best = corr
+            bidx = num
+
+w = []
+for i,s in enumerate(x):
+    if s !=0:
+        w.append(i)
+
+print(len(w))
+
+np.save('results/top_models/subseqs/overlab_w_'+str(num), np.asarray(w))
+
+xline = list(np.tile(np.asarray(['']), (len(x))))
+for i in w:
+    xline[i] = dd[0][i]
+
+
+plt.plot(x)
+# plt.xticks(np.arange(len(xline)), xline, fontsize=5)
+plt.show()
+
+
+
+
+
+
+# d_res = np.zeros((len(x), 28))
+# dp = np.asarray(ds)[w_dna_kp_p5]
+# for i, n in enumerate(dp):
+#     d_res[w[i], n] += 1
+#
+# dl = []
+# for c in dp:
+#     dl.append(chr(c+97))
+
+
+
+
+
+
+
 
 
 
@@ -543,6 +486,26 @@ for i in np.arange(1,15):
 
 
 ##############################
+# all = []
+# shapes = []
+# for b in bind:
+#     for s in b:
+#         all.append(s[1:].astype(float))
+#         shapes.append(len(s))
+#
+# for b in nob:
+#     for s in b:
+#         all.append(s[1:].astype(float))
+#         shapes.append(len(s))
+#
+# m = max(shapes)
+# shapes = 0
+# b = 0
+# n = 0
+# h = 0
+# nob = 0
+# bind = 0
+
 a = []
 for s in all:
     p = np.zeros(m-len(s))
@@ -612,6 +575,31 @@ plt.show()
 
 
 
+
+MODEL_PATH = 'results/top_models/topall/'
+files = os.listdir(MODEL_PATH)
+files.sort()
+bind = []
+nob = []
+# dna = []
+# swap = []
+blen = 0
+nlen = 0
+for file in files:
+    if '.npy' in file :
+        if 'bind_acc' in file and 'F' not in file:
+            b = np.load(MODEL_PATH+file)
+            print(file)
+            blen += len(b)
+        if 'no_acc' in file and 'F' not in file:
+            n = np.load(MODEL_PATH+file)
+            print(file)
+            nlen += len(n)
+        if 'h_all' in file and 'F' not in file:
+            h = np.load(MODEL_PATH+file)
+            bind.append(np.asarray(h[:81])[b])
+            nob.append(np.asarray(h[81:])[n])
+            print(file)
 
 
 ########################################################33
