@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+                                                                                                                                                                                                                                                                                                                                            # -*- coding: utf-8 -*-
 """LSTM-pytorch
 
 """
@@ -11,7 +11,6 @@ import random
 import os, sys
 import numpy as np
 import matplotlib.pyplot as plt
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -24,17 +23,16 @@ import torch.nn.functional as F
 # np.random.seed(0)
 
 import wandb
-wandb.init(project='antibodies_lstm_100_FLIPPED')
+wandb.init(project='antibodies-flipped-CNN_BS1')
 wab = wandb.config
 
+LSTM = False
 
 wab.NUM_CLASSES = 2
 wab.N_LAYERS = 1
 wab.INPUT_DIM = 27
 wab.HIDDEN_DIM = 300
-
 wab.DROPOUT = .5
-
 wab.LR = .0001
 wab.BS = 1
 wab.NUM_EPOCHS = 200
@@ -46,8 +44,8 @@ rando = random.randint(0, 100000)
 wab.RANDO = rando
 
 
-RESULTS = 'results/100FLIPPED/'
-PRESAVE_NAME = RESULTS + ('/lstm-'+str(rando)+'--'+str(wab.NUM_EPOCHS)+'e-'+str(wab.LR)+'lr-'+str(wab.BS)+'bs-'+str(wab.HIDDEN_DIM)+'hd-'+str(wab.OPTIM)+'opt-')
+RESULTS = 'results/CNN_BS1/'
+PRESAVE_NAME = RESULTS + ('/LSTM-'+str(rando)+'--'+str(wab.NUM_EPOCHS)+'e-'+str(wab.LR)+'lr-'+str(wab.BS)+'bs-'+str(wab.HIDDEN_DIM)+'hd-'+str(wab.OPTIM)+'opt-')
 
 
 #some stuff for wandb
@@ -86,7 +84,7 @@ trainx = np.append(xtrainf, ntrainf)
 trainy = np.append(ybtrain, yntrain)
 testy = np.append(ybtest, yntest)
 
-# rng = np.random.default_rng()
+rng = np.random.default_rng()
 # rng.shuffle(trainy)
 
 def hot_prots(X):
@@ -98,6 +96,19 @@ def hot_prots(X):
         X_bin.append(x)
     return X_bin
 
+def cnn_batch(x,y,phase):
+    ins = []
+    batch_idx = np.random.choice(len(x), wab.BS)
+    batch_bin = [x[i] for i in batch_idx]
+    longest = 1750
+    for im in batch_bin:
+        ad = np.zeros((longest-im.shape[0], wab.INPUT_DIM))
+        ad[:, 26] += 1
+        im = np.concatenate((im, ad), axis=0)
+        ins.append(im)
+    labels = torch.from_numpy(y[batch_idx]).to(torch.long)
+    ins = torch.from_numpy(np.asarray(ins)).to(torch.float)
+    return ins, labels
 
 def load_batch(x, y, phase):
     ins = []
@@ -135,6 +146,31 @@ data = {'train': [X, trainy], 'test': [Xt, testy]}
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
+class ConvNet(nn.Module):
+    def __init__(self, classes = wab.NUM_CLASSES):
+        super(ConvNet, self).__init__()
+        self.layer1 = nn.Sequential(
+            nn.Conv2d(1, 16, kernel_size=3, stride=1, padding=2),
+            nn.Dropout(wab.DROPOUT),
+            nn.BatchNorm2d(16),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2))
+        self.layer2 = nn.Sequential(
+            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=2),
+            nn.Dropout(wab.DROPOUT),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2))
+        self.fc = nn.Linear(112384, 2)
+        #self.sig = nn.Sigmoid()
+    def forward(self, x):
+        out = self.layer1(x)
+        out = self.layer2(out)
+        out = out.reshape(out.size(0), -1)
+        out = self.fc(out)
+        #out = self.sig(out)
+        return out
+
 class Classifier_LSTM(nn.Module):
     def __init__(self, nl, hd, ba):
         super(Classifier_LSTM, self).__init__()
@@ -142,15 +178,17 @@ class Classifier_LSTM(nn.Module):
         self.hd = hd
         self.ba = ba
         self.lstm1 =  nn.LSTM(wab.INPUT_DIM, hd, num_layers=nl, bias=True, batch_first=True)
+        self.relu = nn.RReLU()
         self.drop = nn.Dropout(p=wab.DROPOUT)
         self.fc = nn.Linear(hd, wab.NUM_CLASSES)
-        self.sig = nn.Sigmoid()
+        # self.sig = nn.Sigmoid()
     def forward(self, inputs, X_lengths, hidden):
         X, hidden1 = self.lstm1(inputs)
         X = X[:,-1,:]
+        out = self.relu(X)
         out = self.drop(X)
         out = self.fc(X)
-        out = self.sig(out)
+        # out = self.sig(out)
         return out, hidden1
     def init_hidden1(self, nl, ba):
         weight = next(model.parameters()).data
@@ -158,10 +196,15 @@ class Classifier_LSTM(nn.Module):
                   weight.new(nl, ba, hd).zero_().to(torch.int64).to(device))
         return hidden1
 
-model = Classifier_LSTM(nl, hd,ba)
+if LSTM == True:
+    model = Classifier_LSTM(nl, hd,ba)
+else:
+    model = ConvNet(wab.NUM_CLASSES)
+
 model.to(device)
 
 criterion = nn.CrossEntropyLoss()
+
 
 if wab.OPTIM == 'adam':
     optimizer = torch.optim.Adam(model.parameters(), lr=wab.LR)
@@ -173,7 +216,8 @@ elif wab.OPTIM == 'sgd':
 def train():
     best_acc = 0
     for epoch in range(wab.NUM_EPOCHS):
-        h1 = model.init_hidden1(wab.N_LAYERS, wab.BS)
+        if LSTM == True:
+            h1 = model.init_hidden1(wab.N_LAYERS, wab.BS)
         for phase in ['train', 'test']:
             running_loss = 0
             running_corrects = 0
@@ -183,11 +227,17 @@ def train():
                 model.eval()
             x,y = data[phase]
             for i in range(len(x)//wab.BS):
-                inputs, labels, X_lengths = load_batch(x,y, phase)
-                inputs, labels = inputs.to(device), labels.to(device)
                 optimizer.zero_grad()
                 with torch.set_grad_enabled(phase == 'train'):
-                    outs, h = model(inputs, X_lengths, h1)
+                    if LSTM == True:
+                        inputs, labels, X_lengths = load_batch(x,y, phase)
+                        inputs, labels = inputs.to(device), labels.to(device)
+                        outs, h = model(inputs, X_lengths, h1)
+                    else:
+                        inputs, labels = cnn_batch(x,y, phase)
+                        inputs, labels = inputs.to(device), labels.to(device)
+                        inputs = inputs[:,None,:,:]
+                        outs = model(inputs)
                     _, preds = outs.max(1)
                     loss = criterion(outs, labels)
                     if phase == 'train':
