@@ -1,6 +1,5 @@
-                                                                                                                                                                                                                                                                                                                                            # -*- coding: utf-8 -*-
+                                                                                                                                                                                                                                                                                                                                          # -*- coding: utf-8 -*-
 """LSTM-pytorch
-
 """
 
 
@@ -23,7 +22,7 @@ import torch.nn.functional as F
 # np.random.seed(0)
 
 import wandb
-wandb.init(project='antibodies-flipped-CNN_BS1')
+wandb.init(project='antibodies-flipped-CNN_map')
 wab = wandb.config
 
 LSTM = False
@@ -44,8 +43,8 @@ rando = random.randint(0, 100000)
 wab.RANDO = rando
 
 
-RESULTS = 'results/CNN_BS1/'
-PRESAVE_NAME = RESULTS + ('/LSTM-'+str(rando)+'--'+str(wab.NUM_EPOCHS)+'e-'+str(wab.LR)+'lr-'+str(wab.BS)+'bs-'+str(wab.HIDDEN_DIM)+'hd-'+str(wab.OPTIM)+'opt-')
+RESULTS = 'results/CNN_map/'
+PRESAVE_NAME = RESULTS + ('/CNN-'+str(rando)+'--'+str(wab.NUM_EPOCHS)+'e-'+str(wab.LR)+'lr-'+str(wab.BS)+'bs-'+str(wab.HIDDEN_DIM)+'hd-'+str(wab.OPTIM)+'opt-')
 
 
 #some stuff for wandb
@@ -63,28 +62,21 @@ xtest = np.load('data/bind/bind_test.npy')
 xtrain = np.load('data/bind/bind_train.npy')
 ntrain = np.load('data/notbind/nobind_train.npy')
 ntest = np.load('data/notbind/nobind_test.npy')
-
 xtestf = [np.flip(i) for i in xtest]
 xtrainf = [np.flip(i) for i in xtrain]
-# xtest = np.append(xtest, xtestf)
-# xtrain = np.append(xtrain, xtrainf)
-
 ntestf = [np.flip(i) for i in ntest]
 ntrainf = [np.flip(i) for i in ntrain]
-# ntest = np.append(ntest, ntestf)
-# ntrain = np.append(ntrain, ntrainf)
-
 ybtest = np.ones(len(xtestf))
 ybtrain = np.ones(len(xtrainf))
 yntrain = np.zeros(len(ntrainf))
 yntest = np.zeros(len(ntestf))
-
 testx = np.append(xtestf, ntestf)
 trainx = np.append(xtrainf, ntrainf)
 trainy = np.append(ybtrain, yntrain)
 testy = np.append(ybtest, yntest)
 
-rng = np.random.default_rng()
+##if you wanna shuffle the labels--->
+# rng = np.random.default_rng()
 # rng.shuffle(trainy)
 
 def hot_prots(X):
@@ -128,17 +120,13 @@ def load_batch(x, y, phase):
 
 X = hot_prots(trainx)
 Xt = hot_prots(testx)
-
 xtrainf = [np.flip(i, axis=1) for i in X]
 xtestf = [np.flip(i, axis=1) for i in Xt]
-
 trainy = np.append(trainy, trainy)
 testy = np.append(testy, testy)
-
 X = np.append(X, xtrainf)
 Xt = np.append(Xt, xtestf)
 print('Training Size:', len(X), 'Test Size:', len(Xt))
-
 data = {'train': [X, trainy], 'test': [Xt, testy]}
 
 
@@ -150,25 +138,27 @@ class ConvNet(nn.Module):
     def __init__(self, classes = wab.NUM_CLASSES):
         super(ConvNet, self).__init__()
         self.layer1 = nn.Sequential(
-            nn.Conv2d(1, 16, kernel_size=3, stride=1, padding=2),
+            nn.Conv2d(1, 81, kernel_size=3, stride=1, padding=2),
             nn.Dropout(wab.DROPOUT),
-            nn.BatchNorm2d(16),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2))
+            nn.MaxPool2d(kernel_size=2, stride=1))
         self.layer2 = nn.Sequential(
-            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=2),
+            nn.Conv2d(81, 146, kernel_size=5, stride=1, padding=2),
             nn.Dropout(wab.DROPOUT),
-            nn.BatchNorm2d(32),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2))
-        self.fc = nn.Linear(112384, 2)
-        #self.sig = nn.Sigmoid()
+            nn.MaxPool2d(kernel_size=2, stride=1))
+        self.layer3 = nn.Sequential(
+            nn.Conv2d(146, 1, kernel_size=1, stride=1, padding=1),
+            nn.Dropout(wab.DROPOUT),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=1))
+        self.fc = nn.Linear(49028, 2)
     def forward(self, x):
         out = self.layer1(x)
         out = self.layer2(out)
+        out = self.layer3(out)
         out = out.reshape(out.size(0), -1)
         out = self.fc(out)
-        #out = self.sig(out)
         return out
 
 class Classifier_LSTM(nn.Module):
@@ -181,14 +171,14 @@ class Classifier_LSTM(nn.Module):
         self.relu = nn.RReLU()
         self.drop = nn.Dropout(p=wab.DROPOUT)
         self.fc = nn.Linear(hd, wab.NUM_CLASSES)
-        # self.sig = nn.Sigmoid()
+        self.sig = nn.Sigmoid()
     def forward(self, inputs, X_lengths, hidden):
         X, hidden1 = self.lstm1(inputs)
         X = X[:,-1,:]
         out = self.relu(X)
         out = self.drop(X)
         out = self.fc(X)
-        # out = self.sig(out)
+        out = self.sig(out)
         return out, hidden1
     def init_hidden1(self, nl, ba):
         weight = next(model.parameters()).data
@@ -202,6 +192,10 @@ else:
     model = ConvNet(wab.NUM_CLASSES)
 
 model.to(device)
+
+
+pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+print('Total # Trainable Parameters = ', pytorch_total_params,  '!!!!!!!')
 
 criterion = nn.CrossEntropyLoss()
 
