@@ -45,76 +45,7 @@ NL = 1
 BS = 1
 
 
-dd = ['QVKLLESGPELVKPGASVKMSCKASGYTFTSYVMHWVKQKPGQGLEWIGYINPYNDGTKYNEKFKGKATLTSDKSSSTAYMELSSLTSEDSAVYYCVRGGYRPYYAMDYWGQGTSVTVSSAKTTPPSVYPLAPGSAAQTNSMVTLGCLVKGYFPEPVTVTWNSGSLSSGVHTFPAVLQSDLYTLSSSVTVPSSTWPSETVTCNVAHPASSTKVDKKIVPRDCTSHHHHHHELQMTQSPASLSASVGETVTITCRASENIYSYLAWYQQKQGKSPQLLVYNAKTLAEGVPSRFSGSGSGTQFSLKINSLQPEDFGSYYCQHHYGTPLTFGAGTKLELKRADAAPTVSIFPPSSEQLTSGGASVVCFLNNFYPKDINVKWKIDGSERQNGVLNSWTDQDSKDSTYSMSSTLTLTKDEYERHNSYTCEATHKTSTSPIVKSFNRNEC']
-ds = []
-for c in dd[0]:
-    ds.append(int(ord(c.lower())-97))
 
-ds = np.expand_dims(ds, 0)
-
-allx = np.tile(ds, (81,1))
-alln = np.append(ntrain, ntest)
-alln = sorted(alln, key=len)
-
-
-def insert_bind():
-    for idx, s in enumerate(allx):
-        alln[idx][30:36] = s[30:36]
-        alln[idx][49:67] = s[49:67]
-        alln[idx][98:110] = s[98:110]
-        if alln[idx].shape[0] > 253:
-            alln[idx][253:265] = s[253:265]
-        if alln[idx].shape[0] > 278:
-            alln[idx][278:287] = s[278:287]
-        if alln[idx].shape[0] == 325:
-            alln[idx][318:-1] = s[318:324]
-        if alln[idx].shape[0] > 328:
-            alln[idx][318:328] = s[318:328]
-    return alln
-
-def knockout():
-    for idx, s in enumerate(allx):
-        r = random.randint(5,81)
-        s[30:35] = alln[idx][30:35]
-        s[49:66] = alln[idx][49:66]
-        s[98:109] = alln[idx][98:109]
-        if alln[idx].shape[0] < 252:
-            s[253:264] = alln[idx+r][253:264]
-            s[318:327] = alln[idx+r][318:327]
-        if alln[idx].shape[0] > 252:
-            s[253:264] = alln[idx][253:264]
-        if alln[idx].shape[0] > 277:
-            s[278:286] = alln[idx][278:286]
-        if alln[idx].shape[0] == 325:
-            s[318:324] = alln[idx][318:-1]
-        if alln[idx].shape[0] > 327:
-            s[318:327] = alln[idx][318:327]
-    return allx
-
-def knockout_peaks():
-    for idx, s in enumerate(allx):
-        if alln[idx].shape[0]<400:
-            r = random.randint(7,81)
-            d = 399 - alln[idx].shape[0]
-            y = np.append(alln[idx], alln[r][-d:])
-            s[w] = y[w]
-        else:
-            s[w] = alln[idx][w]
-    return allx
-
-
-if INSERT == True:
-    i = insert_bind(alln, allx)
-    X = [np.flip(idx) for idx in i]
-if KNOCKOUT == True:
-    k = knockout(alln, allx)
-    X = [np.flip(idx) for idx in k]
-if KNOCKOUT_PEAKS == True:
-    kp = knockout(alln, allx)
-    X = [np.flip(idx) for idx in kp]
-
-sbhot_seqs = hot_prots(X)
-print('# of bind test sequences:', len(sbhot_seqs))
 
 
 
